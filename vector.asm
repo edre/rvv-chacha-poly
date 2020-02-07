@@ -1,4 +1,16 @@
+.global instruction_counter
 .global vector_chacha20
+.global vlmax_u32
+
+instruction_counter:
+	rdinstret a0
+	ret
+
+vlmax_u32:
+	li a0, -1
+	vsetvli a0, a0, e32
+	ret
+
 
 # Cell-based implementation strategy:
 # v0-v15: Cell vectors. Each element is from a different block
