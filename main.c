@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "boring.h"
 
 void println_hex(uint8_t* data, int size) {
@@ -11,14 +12,16 @@ void println_hex(uint8_t* data, int size) {
   printf("\n");
 }
 
-int main(int argc, uint8_t *argv[]) {
+// TODO: test the vector doesn't write past the end
+// test function with multiple length inputs (optional printing)
+// test non-block sized lengths
+
+extern uint64_t instruction_counter();
+
+void test_chacha() {
   extern void vector_chacha20(uint8_t *out, const uint8_t *in,
 			      size_t in_len, const uint8_t key[32],
 			      const uint8_t nonce[12], uint32_t counter);
-  extern uint64_t instruction_counter();
-  extern uint32_t vlmax_u32();
-
-  printf("VLMAX in blocks: %d\n", vlmax_u32());
 
   const int len = 64 * 101;
   uint8_t data[len];
@@ -49,8 +52,46 @@ int main(int argc, uint8_t *argv[]) {
   printf("instruction count: %d\n", end-start);
 
   if (memcmp(golden, vector, len)) {
-    printf("vector output doesn't match boring golden output\n");
+    printf("chacha FAIL\n");
   } else {
-    printf("PASS\n");
+    printf("chacha PASS\n");
   }
+}
+
+void test_poly() {
+  extern uint64_t vector_poly1305(const uint8_t* in, size_t len,
+				  const uint8_t key[32], uint8_t sig[16]);
+
+  const uint8_t zero[32] ={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+  const uint8_t one[32] = {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+  const uint8_t key[32] = {1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121, 144, 169, 196, 225, 255,
+  			   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+  const uint8_t data[32] = "Setec astronomy;too many secrets";
+
+  poly1305_state state;
+  boring_poly1305_init(&state, key);
+  boring_poly1305_update(&state, data, 16);
+  uint8_t *sig = malloc(16); // gets corrupted if I define it on the stack?
+  boring_poly1305_finish(&state, sig);
+  printf("boring mac: ");
+  println_hex(sig, 16);
+
+  uint8_t *sig2 = malloc(16);
+  vector_poly1305(data, 16, key, sig2);
+  printf("vector mac: ");
+  println_hex(sig2, 16);
+
+  if (memcmp(sig, sig2, 16)) {
+    printf("poly FAIL\n");
+  } else {
+    printf("poly PASS\n");
+  }
+}
+
+int main(int argc, uint8_t *argv[]) {
+  extern uint32_t vlmax_u32();
+  printf("VLMAX in blocks: %d\n", vlmax_u32());
+  //test_chacha();
+  //printf("\n");
+  test_poly();
 }
