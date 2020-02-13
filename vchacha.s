@@ -193,31 +193,12 @@ round_loop:
 	# loop again if we have remaining blocks
 	bne x0, t3, encrypt_blocks
 
-	ret
+	# TODO: if there is a partial block
+	# extract the final words one at a time
+	# There doesn't seem to be an indexed extract, so
+	#  vslidedown.vx N
+	#  vmv.x.s t3, vx
+	#  sw sp[x], t3
+	# Then use vl to copy the correct number of bytes
 
-# poly1305
-# Based on the obvious SIMD algorithm, described as Goll-Gueron here:
-# https://eprint.iacr.org/2019/842.pdf
-# Assumes VLEN is a power of 2, and that intermediate vsetvl will always return the max.
-# Hash is defined simply, for 32-byte key split between 16-byte s and r:
-# s + m[0:16] * r⁴ + m[16:32] * r³ + m[32:48] * r² + m[48:64] * r  mod  2¹³⁰ - 5
-# Performant implementations represent 130 bit numbers as 5 26-bit numbers.
-# Precomputation step:
-#   Compute vector [r, r², r³, r⁴, ...] ( 5 32-bit vectors)
-#   Compute scalar r^VLMAX (5 32-bit registers)
-#   This can be done in 2*log2(VLMAX) multiplications:
-#   i = 1; m = r; v = r
-#   while i < VLMAX:
-#       v *= m (masking out the last i elements)
-#       m *= m
-#       i <<= 1
-# Vector loop:
-#   load segment (from the end) into 4 32-bit vectors
-#   spread into standard 5 32-bit vector format
-#   vector multiply into polynomial vector
-#   vector add into sum so far
-#   vector-scalar multiply polynomial vector with r^VLMAX
-# Extract:
-#   vector sum reduce polynomial vector into scalar
-#   add to s
-#   extract 16-byte hash
+	ret
