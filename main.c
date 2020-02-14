@@ -87,24 +87,31 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
 
 void test_polys() {
   const uint8_t zero[32] ={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-  const uint8_t one[32] = {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+  const uint8_t one[32] = {0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
   const uint8_t key[32] = {1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121, 144, 169, 196, 225, 255,
   			   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-  const uint8_t data[32] = "Setec astronomy;too many secrets";
-  bool pass = test_poly(data, 32, key, true);
+  const uint8_t data[48] = "Setec astronomy;too many secrets";
+  bool pass = test_poly(data, 48, key, true);
+
+  if (!pass)
+    goto end;
 
   // random test
   FILE* f = fopen("/dev/urandom", "r");
-  for (int i=0; i<100; i++) {
+  const int max_len = 16*16;
+  uint8_t *rand = malloc(max_len);
+  for (int len = 16; len <= max_len; len += 16) {
     fread((uint8_t*)key, 32, 1, f);
-    fread((uint8_t*)data, 32, 1, f);
-    if (!test_poly(data, 32, key, false)) {
+    fread((uint8_t*)rand, len, 1, f);
+    if (!test_poly(data, len, key, false)) {
+      printf("failed random input len=%d\n", len);
       pass = false;
       break;
     }
   }
   fclose(f);
 
+ end:
   if (pass) {
     printf("poly PASS\n");
   } else {

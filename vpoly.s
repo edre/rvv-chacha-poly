@@ -126,46 +126,46 @@
 	# d1 column
 	mul \d1, \a1, \a0
 	mul \tmp, \a1, \a0
-	add \d0, \d0, \tmp
+	add \d1, \d1, \tmp
 	mul \tmp, \a52, \a4
-	add \d0, \d0, \tmp
+	add \d1, \d1, \tmp
 	mul \tmp, \a53, \a3
-	add \d0, \d0, \tmp
+	add \d1, \d1, \tmp
 	mul \tmp, \a54, \a2
-	add \d0, \d0, \tmp
+	add \d1, \d1, \tmp
 
 	# d2 column
 	mul \d2, \a2, \a0
 	mul \tmp, \a1, \a1
-	add \d0, \d0, \tmp
+	add \d2, \d2, \tmp
 	mul \tmp, \a2, \a0
-	add \d0, \d0, \tmp
+	add \d2, \d2, \tmp
 	mul \tmp, \a53, \a4
-	add \d0, \d0, \tmp
+	add \d2, \d2, \tmp
 	mul \tmp, \a54, \a3
-	add \d0, \d0, \tmp
+	add \d2, \d2, \tmp
 
 	# d3 column
 	mul \d3, \a3, \a0
 	mul \tmp, \a1, \a2
-	add \d0, \d0, \tmp
+	add \d3, \d3, \tmp
 	mul \tmp, \a2, \a1
-	add \d0, \d0, \tmp
+	add \d3, \d3, \tmp
 	mul \tmp, \a3, \a0
-	add \d0, \d0, \tmp
+	add \d3, \d3, \tmp
 	mul \tmp, \a54, \a4
-	add \d0, \d0, \tmp
+	add \d3, \d3, \tmp
 
 	# d4 column
 	mul \d4, \a4, \a0
 	mul \tmp, \a1, \a3
-	add \d0, \d0, \tmp
+	add \d4, \d4, \tmp
 	mul \tmp, \a2, \a2
-	add \d0, \d0, \tmp
+	add \d4, \d4, \tmp
 	mul \tmp, \a3, \a1
-	add \d0, \d0, \tmp
+	add \d4, \d4, \tmp
 	mul \tmp, \a4, \a0
-	add \d0, \d0, \tmp
+	add \d4, \d4, \tmp
 
 	# Carry propagation
 	# logic copied from https://github.com/floodyberry/poly1305-donna
@@ -187,6 +187,11 @@
 	slli \tmp, \carry, 2
 	add \a0, \a0, \tmp
 	add \a0, \a0, \carry
+	# carry as much as the other mul code
+	srli \carry, \a0, 26
+	li \tmp, 0x3ffffff
+	and \a0, \a0, \tmp
+	add \a1, \a1, \carry
 
 	.endm
 
@@ -212,6 +217,14 @@ vector_poly1305:
 	sd s8, 64(sp)
 	sd s9, 72(sp)
 	sd s11, 80(sp)
+
+	# assert input is a multiple of blocksize
+	andi t0, a1, 0xf
+	beq t0, zero, continue
+	li t0, 0x3713 # magic error number
+	sw t0, (a3)
+	j return
+continue:
 
 	# load R and spread to 5 26-bit limbs: s0-4
 	ld t0, 0(a2)
@@ -295,9 +308,9 @@ precomp:
 	slli t5, s4, 2
 	add t5, t5, s4
 	
-
 	# store post-precomputation instruction counter
 	rdinstret s11
+
 
 	# From v11-14, separate out into 5 26-bit limbs: v20-v24
 	.macro vec_split5
@@ -319,7 +332,6 @@ precomp:
 	.endm
 
 	# set up state as initial leading zero step
-	# TODO: assert input is a multiple of blocksize
 	vmv.v.i v1, 0
 	vmv.v.i v2, 0
 	vmv.v.i v3, 0
@@ -329,7 +341,11 @@ precomp:
 	# a4: blocks left
 	srli a4, a1, 4
 	# t1: blocks in initial step
+	# if blocks are a multiple of vector size, use a full vector here
+	addi a4, a4, -1
 	and t1, a4, a5
+	addi a4, a4, 1
+	addi t1, t1, 1
 
 	vsetvli t1, t1, e32
 	vlseg4e.v v11, (a0)
@@ -344,19 +360,16 @@ precomp:
 	vor.vx v24, v24, t0
 
 	li t0, -1
-	vsetvli t0, t0, e32
-	sub t0, t0, t1
+	vsetvli a5, t0, e32
+	sub t0, a5, t1
+	slli a5, a5, 4 # block size in bytes
 	vslideup.vx v1, v20, t0
 	vslideup.vx v2, v21, t0
 	vslideup.vx v3, v22, t0
 	vslideup.vx v4, v23, t0
 	vslideup.vx v5, v24, t0
 
-	li t0, -1
-	vsetvli a5, t0, e32
-	slli a5, a5, 4
 
-	# TODO: vector loop
 vector_loop:
 	beq a1, zero, end_vector_loop
 
@@ -443,6 +456,7 @@ end_vector_loop:
 	carry_scalar s3
 	carry_scalar s4
 	# any remaining stuff to carry has to be in the 2 bits we don't care about, right?
+	bne t0, zero, return
 
 	# collapse into contiguous 128 bits (s0,s2)
 	slli t0, s1, 26
