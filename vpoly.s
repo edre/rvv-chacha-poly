@@ -350,9 +350,9 @@ precomp:
 	vsetvli t1, t1, e32
 	vlseg4e.v v11, (a0)
 	# increment pointer
-	slli t2, t1, 4
-	add a0, a0, t2
-	sub a1, a1, t2
+	slli t0, t1, 4
+	add a0, a0, t0
+	sub a1, a1, t0
 	vec_split5
 	# add leading bit
 	# TODO: don't run vector version if we can't even fill the first vector
@@ -372,11 +372,6 @@ precomp:
 
 vector_loop:
 	beq a1, zero, end_vector_loop
-
-	# nothing should be running in the loop unless input size > vector size
-	li t0, 0x42
-	sw t0, (a3)
-	j return
 
 	# multiply by r^vlmax
 	vec_mul130 vx v1 v2 v3 v4 v5 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx
@@ -496,4 +491,3 @@ return:
 	ld s9, 72(sp)
 	ld s11, 80(sp)
 	ret
-
