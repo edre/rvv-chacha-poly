@@ -65,11 +65,11 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
 
   poly1305_state state;
   boring_poly1305_init(&state, key);
-  boring_poly1305_update(&state, data, 16);
+  boring_poly1305_update(&state, data, len);
   uint8_t *sig = malloc(16); // gets corrupted if I define it on the stack?
   boring_poly1305_finish(&state, sig);
   uint8_t *sig2 = malloc(16);
-  vector_poly1305(data, 16, key, sig2);
+  vector_poly1305(data, len, key, sig2);
 
   bool pass = memcmp(sig, sig2, 16) == 0;
 
@@ -87,19 +87,21 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
 
 void test_polys() {
   const uint8_t zero[32] ={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-  const uint8_t one[32] = {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+  const uint8_t one[32] = {4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
   const uint8_t key[32] = {1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121, 144, 169, 196, 225, 255,
   			   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
   const uint8_t data[32] = "Setec astronomy;too many secrets";
-  bool pass = test_poly(data, 16, key, true);
+  bool pass = test_poly(data, 32, key, true);
 
   // random test
   FILE* f = fopen("/dev/urandom", "r");
-  for (int i = 0; i < 100; i++) {
-    const int len = 16;
+  for (int i=0; i<100; i++) {
     fread((uint8_t*)key, 32, 1, f);
-    fread((uint8_t*)data, len, 1, f);
-    pass = pass && test_poly(data, len, key, false);
+    fread((uint8_t*)data, 32, 1, f);
+    if (!test_poly(data, 32, key, false)) {
+      pass = false;
+      break;
+    }
   }
   fclose(f);
 

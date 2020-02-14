@@ -29,12 +29,9 @@
 #   add to s
 #   extract 16-byte hash
 
-# Generic 4-word to 5 26-bit word widening code
-
 # Generic 130-bit multiply/mod code
-# need scalar-scalar, scalar-vector (masked), vector-vector
 # Reads 5-limbed inputs from a and b, writes result to a
-# Uses 2 e64,m2 registers for tmp accumulation
+# Uses 5 e64,m2 d registers for accumulation
 .macro vec_mul130 x a0 a1 a2 a3 a4 b0 b1 b2 b3 b4 b51 b52 b53 b54 d0 d1 d2 d3 d4 carry tmp v mask=""
 	# Helpful diagram from http://loup-vaillant.fr/tutorials/poly1305-design
 	#      a4      a3      a2      a1      a0
@@ -106,10 +103,90 @@
 	vsll.vi \tmp, \carry, 2 \mask
 	vadd.vv \a0, \a0, \tmp \mask
 	vadd.vv \a0, \a0, \carry \mask
-	# boring stops carrying here
-	/*vsrl.vi \carry, \a0, 26 \mask
+	# boring stops carrying here, but that fails random tests
+	vsrl.vi \carry, \a0, 26 \mask
 	vand.vx \a0, \a0, t0 \mask
-	vadd.vv \a1, \a1, \carry \mask*/
+	vadd.vv \a1, \a1, \carry \mask
+
+	.endm
+
+# Scalar 130-bit a0-4 = a0-4 * a0-4
+.macro scalar_mul130 a0 a1 a2 a3 a4 a51 a52 a53 a54 d0 d1 d2 d3 d4 carry tmp
+	# d0 column
+	mul \d0, \a0, \a0
+	mul \tmp, \a51, \a4
+	add \d0, \d0, \tmp
+	mul \tmp, \a52, \a3
+	add \d0, \d0, \tmp
+	mul \tmp, \a53, \a2
+	add \d0, \d0, \tmp
+	mul \tmp, \a54, \a1
+	add \d0, \d0, \tmp
+
+	# d1 column
+	mul \d1, \a1, \a0
+	mul \tmp, \a1, \a0
+	add \d0, \d0, \tmp
+	mul \tmp, \a52, \a4
+	add \d0, \d0, \tmp
+	mul \tmp, \a53, \a3
+	add \d0, \d0, \tmp
+	mul \tmp, \a54, \a2
+	add \d0, \d0, \tmp
+
+	# d2 column
+	mul \d2, \a2, \a0
+	mul \tmp, \a1, \a1
+	add \d0, \d0, \tmp
+	mul \tmp, \a2, \a0
+	add \d0, \d0, \tmp
+	mul \tmp, \a53, \a4
+	add \d0, \d0, \tmp
+	mul \tmp, \a54, \a3
+	add \d0, \d0, \tmp
+
+	# d3 column
+	mul \d3, \a3, \a0
+	mul \tmp, \a1, \a2
+	add \d0, \d0, \tmp
+	mul \tmp, \a2, \a1
+	add \d0, \d0, \tmp
+	mul \tmp, \a3, \a0
+	add \d0, \d0, \tmp
+	mul \tmp, \a54, \a4
+	add \d0, \d0, \tmp
+
+	# d4 column
+	mul \d4, \a4, \a0
+	mul \tmp, \a1, \a3
+	add \d0, \d0, \tmp
+	mul \tmp, \a2, \a2
+	add \d0, \d0, \tmp
+	mul \tmp, \a3, \a1
+	add \d0, \d0, \tmp
+	mul \tmp, \a4, \a0
+	add \d0, \d0, \tmp
+
+	# Carry propagation
+	# logic copied from https://github.com/floodyberry/poly1305-donna
+	li \tmp, 0x3ffffff
+	.macro carry_prop_scalar a d
+	add \d, \d, \carry
+	srli \carry, \d, 26
+	and \a, \d, \tmp
+	.endm
+
+	li \carry, 0
+	carry_prop_scalar \a0, \d0
+	carry_prop_scalar \a1, \d1
+	carry_prop_scalar \a2, \d2
+	carry_prop_scalar \a3, \d3
+	carry_prop_scalar \a4, \d4
+
+	# wraparound carry continue
+	slli \tmp, \carry, 2
+	add \a0, \a0, \tmp
+	add \a0, \a0, \carry
 
 	.endm
 
@@ -130,6 +207,11 @@ vector_poly1305:
 	sd s3, 24(sp)
 	sd s4, 32(sp)
 	sd s5, 40(sp)
+	sd s6, 48(sp)
+	sd s7, 56(sp)
+	sd s8, 64(sp)
+	sd s9, 72(sp)
+	sd s11, 80(sp)
 
 	# load R and spread to 5 26-bit limbs: s0-4
 	ld t0, 0(a2)
@@ -185,13 +267,23 @@ precomp:
 	add t4, t4, s3
 	slli t5, s4, 2
 	add t5, t5, s4
-	#vec_mul130 vxm v6 v7 v8 v9 v10 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx ",v0.t"
+	vec_mul130 vxm v6 v7 v8 v9 v10 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx ",v0.t"
 
-	# TODO: scalar-scalar 130bit mul: s0-4 = s0-4 * s0-4
+	# scalar-scalar 130bit mul: s0-4 = s0-4 * s0-4
+	# pre-multiplied-by-5 scalars
+	slli t2, s1, 2
+	add t2, t2, s1
+	slli t3, s2, 2
+	add t3, t3, s2
+	slli t4, s3, 2
+	add t4, t4, s3
+	slli t5, s4, 2
+	add t5, t5, s4
+	scalar_mul130 s0 s1 s2 s3 s4 t2 t3 t4 t5 s5 s6 s7 s8 s9 t0 t1
 
 	# end of precomp loop:
 	slli a4, a4, 1 # double exponent
-	# XXX blt a4, a5, precomp
+	blt a4, a5, precomp
 
 	# Store r*5 registers s1-4*5 in t2-5
 	slli t2, s1, 2
@@ -205,45 +297,10 @@ precomp:
 	
 
 	# store post-precomputation instruction counter
-	rdinstret s5
+	rdinstret s11
 
-	# TODO: set up state as initial leading zero step
-	vmv.v.i v11, 0
-	vmv.v.i v12, 0
-	vmv.v.i v13, 0
-	vmv.v.i v14, 0
-	vmv.v.i v15, 0
-	vmv.s.x v11, s0
-	vmv.s.x v12, s1
-	vmv.s.x v13, s2
-	vmv.s.x v14, s3
-	vmv.s.x v15, s4
-	vslideup.vx v1, v11, a5
-	vslideup.vx v2, v12, a5
-	vslideup.vx v3, v13, a5
-	vslideup.vx v4, v14, a5
-	vslideup.vx v5, v15, a5
-
-
-	# ignore that, for testing: vl=1
-	li t0, 1
-	vsetvli zero, t0, e32
-	vmv.v.i v1, 0
-	vmv.v.i v2, 0
-	vmv.v.i v3, 0
-	vmv.v.i v4, 0
-	vmv.v.i v5, 0
-
-	# TODO: vector loop
-vector_loop:
-	
-
-	# multiply by r^vlmax
-	#vec_mul130 vx v1 v2 v3 v4 v5 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx
-
-	# load in new data: v11-v14
-	vlseg4e.v v11, (a0)
-	# separate out into 5 26-bit limbs: v20-v24
+	# From v11-14, separate out into 5 26-bit limbs: v20-v24
+	.macro vec_split5
 	li t0, 0x3ffffff
 	vand.vx v20, v11, t0
 	vsrl.vi v11, v11, 26
@@ -259,7 +316,65 @@ vector_loop:
 	vor.vv v13, v13, v31
 	vand.vx v23, v13, t0
 	vsrl.vi v24, v14, 8
+	.endm
+
+	# set up state as initial leading zero step
+	# TODO: assert input is a multiple of blocksize
+	vmv.v.i v1, 0
+	vmv.v.i v2, 0
+	vmv.v.i v3, 0
+	vmv.v.i v4, 0
+	vmv.v.i v5, 0
+	# a1: bytes left
+	# a4: blocks left
+	srli a4, a1, 4
+	# t1: blocks in initial step
+	and t1, a4, a5
+
+	vsetvli t1, t1, e32
+	vlseg4e.v v11, (a0)
+	# increment pointer
+	slli t2, t1, 4
+	add a0, a0, t2
+	sub a1, a1, t2
+	vec_split5
 	# add leading bit
+	# TODO: don't run vector version if we can't even fill the first vector
+	li t0, 1<<24
+	vor.vx v24, v24, t0
+
+	li t0, -1
+	vsetvli t0, t0, e32
+	sub t0, t0, t1
+	vslideup.vx v1, v20, t0
+	vslideup.vx v2, v21, t0
+	vslideup.vx v3, v22, t0
+	vslideup.vx v4, v23, t0
+	vslideup.vx v5, v24, t0
+
+	li t0, -1
+	vsetvli a5, t0, e32
+	slli a5, a5, 4
+
+	# TODO: vector loop
+vector_loop:
+	beq a1, zero, end_vector_loop
+
+	# nothing should be running in the loop unless input size > vector size
+	li t0, 0x42
+	sw t0, (a3)
+	j return
+
+	# multiply by r^vlmax
+	vec_mul130 vx v1 v2 v3 v4 v5 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx
+
+	# load in new data: v11-v14
+	vlseg4e.v v11, (a0)
+	add a0, a0, a5
+	sub a1, a1, a5
+	vec_split5
+	# add leading bit
+	# TODO: support final non-full block correctly
 	li t0, 1<<24
 	vor.vx v24, v24, t0
 
@@ -270,8 +385,8 @@ vector_loop:
 	vadd.vv v4, v4, v23
 	vadd.vv v5, v5, v24
 
-	# TODO: loop end
-	# bne xxx
+	j vector_loop
+end_vector_loop:
 
 	# multiply in [r^vlmax, r^(vlmax-1),... r^2, r]
 	vsll.vi v27, v7, 2
@@ -290,11 +405,11 @@ vector_loop:
 	vmv.v.i v8, 0
 	vmv.v.i v9, 0
 	vmv.v.i v10, 0
-	vwredsum.vs v6, v6, v1 # is this the right operand order?
-	vwredsum.vs v7, v7, v2
-	vwredsum.vs v8, v8, v3
-	vwredsum.vs v9, v9, v4
-	vwredsum.vs v10, v10, v5
+	vwredsum.vs v6, v1, v6
+	vwredsum.vs v7, v2, v7
+	vwredsum.vs v8, v3, v8
+	vwredsum.vs v9, v4, v9
+	vwredsum.vs v10, v5, v10
 	# extract to scalars
 	li t0, 1
 	vsetvli zero, t0, e64
@@ -329,7 +444,7 @@ vector_loop:
 	carry_scalar s4
 	# any remaining stuff to carry has to be in the 2 bits we don't care about, right?
 
-	# collapse into contiguous 128 bits
+	# collapse into contiguous 128 bits (s0,s2)
 	slli t0, s1, 26
 	or s0, s0, t0
 	slli t0, s2, 52
@@ -354,12 +469,17 @@ vector_loop:
 
 return:
 	# restore registers
-	mv a0, s5
+	mv a0, s11
 	ld s0, 0(sp)
 	ld s1, 8(sp)
 	ld s2, 16(sp)
 	ld s3, 24(sp)
 	ld s4, 32(sp)
 	ld s5, 40(sp)
+	ld s6, 48(sp)
+	ld s7, 56(sp)
+	ld s8, 64(sp)
+	ld s9, 72(sp)
+	ld s11, 80(sp)
 	ret
 
