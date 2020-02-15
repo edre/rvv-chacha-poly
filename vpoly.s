@@ -111,7 +111,7 @@
 	.endm
 
 # Scalar 130-bit a0-4 = a0-4 * a0-4
-.macro scalar_mul130 a0 a1 a2 a3 a4 a53 a54 d0 d1 d2 d3 d4 carry tmp
+.macro scalar_mul130 x a0 a1 a2 a3 a4 a51 a52 a53 a54 d0 d1 d2 d3 d4 carry tmp
 	# d0 column
 	mul \d0, \a1, \a54
 	mul \tmp, \a2, \a53
@@ -155,18 +155,18 @@
 	# Carry propagation
 	# logic copied from https://github.com/floodyberry/poly1305-donna
 	li \tmp, 0x3ffffff
-	.macro carry_prop_scalar a d
+	.macro carry_prop_scalar\x a d
 	add \d, \d, \carry
 	srli \carry, \d, 26
 	and \a, \d, \tmp
 	.endm
 
 	li \carry, 0
-	carry_prop_scalar \a0, \d0
-	carry_prop_scalar \a1, \d1
-	carry_prop_scalar \a2, \d2
-	carry_prop_scalar \a3, \d3
-	carry_prop_scalar \a4, \d4
+	carry_prop_scalar\x \a0, \d0
+	carry_prop_scalar\x \a1, \d1
+	carry_prop_scalar\x \a2, \d2
+	carry_prop_scalar\x \a3, \d3
+	carry_prop_scalar\x \a4, \d4
 
 	# wraparound carry continue
 	slli \tmp, \carry, 2
@@ -177,6 +177,16 @@
 	li \tmp, 0x3ffffff
 	and \a0, \a0, \tmp
 	add \a1, \a1, \carry
+
+	# Store a*5 registers for next time
+	slli \a51, \a1, 2
+	add \a51, \a51, \a1
+	slli \a52, \a2, 2
+	add \a52, \a52, \a2
+	slli \a53, \a3, 2
+	add \a53, \a53, \a3
+	slli \a54, \a4, 2
+	add \a54, \a54, \a4
 
 	.endm
 
@@ -246,8 +256,26 @@ continue:
 	vmv.v.x v8, s2
 	vmv.v.x v9, s3
 	vmv.v.x v10, s4
+
+	# Do first iteration manually, as we can masked set r^2 instead of doing a second multiplication
 	# a4 is current exp
 	li a4, 1
+	# set alternating mask pattern
+	vid.v v1
+	vrsub.vx v1, v1, a5
+	vand.vx v1, v1, a4
+	vmseq.vx v0, v1, a4
+	slli a4, a4, 1
+
+	# scalar-scalar 130bit mul: s0-4 = s0-4 * s0-4
+	scalar_mul130 1 s0 s1 s2 s3 s4 t2 t3 t4 t5 s5 s6 s7 s8 s9 t0 t1
+
+	vmv.v.i v11, 0 # no vmv with mask, so vor with 0
+	vor.vx v6, v11, s0, v0.t
+	vor.vx v7, v11, s1, v0.t
+	vor.vx v8, v11, s2, v0.t
+	vor.vx v9, v11, s3, v0.t
+	vor.vx v10, v11, s4, v0.t
 
 precomp:
 	# compute mask (v0)
@@ -260,35 +288,11 @@ precomp:
 	vand.vx v1, v1, a4
 	vmseq.vx v0, v1, a4
 
-	# optimization for first iteration, masked set r^2 instead of vector multiplying it
-	li t0, 1
-	beq a4, t0, skip_mul
 	# vector-scalar masked 130bit mul: v6-10 = v6-10 * s0-4
 	vec_mul130 vxm v6 v7 v8 v9 v10 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx ",v0.t"
-skip_mul:
 
 	# scalar-scalar 130bit mul: s0-4 = s0-4 * s0-4
-	scalar_mul130 s0 s1 s2 s3 s4 t4 t5 s5 s6 s7 s8 s9 t0 t1
-	# Store r*5 registers s1-4*5 in t2-5
-	slli t2, s1, 2
-	add t2, t2, s1
-	slli t3, s2, 2
-	add t3, t3, s2
-	slli t4, s3, 2
-	add t4, t4, s3
-	slli t5, s4, 2
-	add t5, t5, s4
-
-	# first iteration optimization
-	li t0, 1
-	bne a4, t0, skip_set
-	vmv.v.i v11, 0 # no vmv with mask, so vor with 0
-	vor.vx v6, v11, s0, v0.t
-	vor.vx v7, v11, s1, v0.t
-	vor.vx v8, v11, s2, v0.t
-	vor.vx v9, v11, s3, v0.t
-	vor.vx v10, v11, s4, v0.t
-skip_set:
+	scalar_mul130 2 s0 s1 s2 s3 s4 t2 t3 t4 t5 s5 s6 s7 s8 s9 t0 t1
 
 	# end of precomp loop:
 	slli a4, a4, 1 # double exponent
