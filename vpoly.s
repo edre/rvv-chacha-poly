@@ -111,48 +111,36 @@
 	.endm
 
 # Scalar 130-bit a0-4 = a0-4 * a0-4
-.macro scalar_mul130 a0 a1 a2 a3 a4 a51 a52 a53 a54 d0 d1 d2 d3 d4 carry tmp
+.macro scalar_mul130 a0 a1 a2 a3 a4 a53 a54 d0 d1 d2 d3 d4 carry tmp
 	# d0 column
-	mul \d0, \a0, \a0
-	mul \tmp, \a51, \a4
+	mul \d0, \a1, \a54
+	mul \tmp, \a2, \a53
 	add \d0, \d0, \tmp
-	mul \tmp, \a52, \a3
-	add \d0, \d0, \tmp
-	mul \tmp, \a53, \a2
-	add \d0, \d0, \tmp
-	mul \tmp, \a54, \a1
+	slli \d0, \d0, 1
+	mul \tmp, \a0, \a0
 	add \d0, \d0, \tmp
 
 	# d1 column
 	mul \d1, \a1, \a0
-	mul \tmp, \a1, \a0
+	mul \tmp, \a2, \a54
 	add \d1, \d1, \tmp
-	mul \tmp, \a52, \a4
-	add \d1, \d1, \tmp
+	slli \d1, \d1, 1
 	mul \tmp, \a53, \a3
-	add \d1, \d1, \tmp
-	mul \tmp, \a54, \a2
 	add \d1, \d1, \tmp
 
 	# d2 column
 	mul \d2, \a2, \a0
-	mul \tmp, \a1, \a1
-	add \d2, \d2, \tmp
-	mul \tmp, \a2, \a0
-	add \d2, \d2, \tmp
 	mul \tmp, \a53, \a4
 	add \d2, \d2, \tmp
-	mul \tmp, \a54, \a3
+	slli \d2, \d2, 1
+	mul \tmp, \a1, \a1
 	add \d2, \d2, \tmp
 
 	# d3 column
 	mul \d3, \a3, \a0
 	mul \tmp, \a1, \a2
 	add \d3, \d3, \tmp
-	mul \tmp, \a2, \a1
-	add \d3, \d3, \tmp
-	mul \tmp, \a3, \a0
-	add \d3, \d3, \tmp
+	slli \d3, \d3, 1
 	mul \tmp, \a54, \a4
 	add \d3, \d3, \tmp
 
@@ -160,11 +148,8 @@
 	mul \d4, \a4, \a0
 	mul \tmp, \a1, \a3
 	add \d4, \d4, \tmp
+	slli \d4, \d4, 1
 	mul \tmp, \a2, \a2
-	add \d4, \d4, \tmp
-	mul \tmp, \a3, \a1
-	add \d4, \d4, \tmp
-	mul \tmp, \a4, \a0
 	add \d4, \d4, \tmp
 
 	# Carry propagation
@@ -245,6 +230,12 @@ continue:
 	and s3, s3, t5
 	srli s4, t1, 40
 
+	# pre-multiplied-by-5 scalars
+	slli t4, s3, 2
+	add t4, t4, s3
+	slli t5, s4, 2
+	add t5, t5, s4
+
 	# a5 is vlmax-1 for e32m1
 	li t0, -1
 	vsetvli a5, t0, e32
@@ -257,7 +248,7 @@ continue:
 	vmv.v.x v10, s4
 	# a4 is current exp
 	li a4, 1
-	
+
 precomp:
 	# compute mask (v0)
 	# exp-1: 7,6,5,4,3,2,1,0 (a5)
@@ -268,36 +259,16 @@ precomp:
 	vrsub.vx v1, v1, a5
 	vand.vx v1, v1, a4
 	vmseq.vx v0, v1, a4
-	# TODO: first iteration can skip the vector-scalar mul, and just masked assign r^2
 
+	# optimization for first iteration, masked set r^2 instead of vector multiplying it
+	li t0, 1
+	beq a4, t0, skip_mul
 	# vector-scalar masked 130bit mul: v6-10 = v6-10 * s0-4
-	# pre-multiplied-by-5 scalars
-	slli t2, s1, 2
-	add t2, t2, s1
-	slli t3, s2, 2
-	add t3, t3, s2
-	slli t4, s3, 2
-	add t4, t4, s3
-	slli t5, s4, 2
-	add t5, t5, s4
 	vec_mul130 vxm v6 v7 v8 v9 v10 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx ",v0.t"
+skip_mul:
 
 	# scalar-scalar 130bit mul: s0-4 = s0-4 * s0-4
-	# pre-multiplied-by-5 scalars
-	slli t2, s1, 2
-	add t2, t2, s1
-	slli t3, s2, 2
-	add t3, t3, s2
-	slli t4, s3, 2
-	add t4, t4, s3
-	slli t5, s4, 2
-	add t5, t5, s4
-	scalar_mul130 s0 s1 s2 s3 s4 t2 t3 t4 t5 s5 s6 s7 s8 s9 t0 t1
-
-	# end of precomp loop:
-	slli a4, a4, 1 # double exponent
-	blt a4, a5, precomp
-
+	scalar_mul130 s0 s1 s2 s3 s4 t4 t5 s5 s6 s7 s8 s9 t0 t1
 	# Store r*5 registers s1-4*5 in t2-5
 	slli t2, s1, 2
 	add t2, t2, s1
@@ -307,6 +278,21 @@ precomp:
 	add t4, t4, s3
 	slli t5, s4, 2
 	add t5, t5, s4
+
+	# first iteration optimization
+	li t0, 1
+	bne a4, t0, skip_set
+	vmv.v.i v11, 0 # no vmv with mask, so vor with 0
+	vor.vx v6, v11, s0, v0.t
+	vor.vx v7, v11, s1, v0.t
+	vor.vx v8, v11, s2, v0.t
+	vor.vx v9, v11, s3, v0.t
+	vor.vx v10, v11, s4, v0.t
+skip_set:
+
+	# end of precomp loop:
+	slli a4, a4, 1 # double exponent
+	blt a4, a5, precomp
 	
 	# store post-precomputation instruction counter
 	rdinstret s11
