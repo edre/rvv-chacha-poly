@@ -24,12 +24,14 @@ vlmax_u32:
 # a4 = uint8_t nonce[12]
 # a5 = uint32_t counter
 vector_chacha20:
-	# TODO: assert a2 is a multiple of 64.
-	# TODO: even better, compute any final partial block, and xor it using scalar instructions
 	# a2 = initial length in bytes
-	# t3 = remaining length in 64-byte blocks
+	# t3 = remaining 64-byte blocks to mix
+	# t4 = remaining full blocks to read/write
+	#  (if t3 and t4 are different by one, there is a partial block to manually xor)
 	# t1 = vl in 64-byte blocks
-	srli t3, a2, 6
+	srli t4, a2, 6
+	addi t0, a2, 63
+	srli t3, t0, 6
 encrypt_blocks:
 	# initialize vector state
 	vsetvli t1, t3, e32
@@ -97,12 +99,12 @@ round_loop:
 	vrotl \b, 7
 	.endm
 
-	# Mix columns. Could theoretically be done with VLMUL=4
+	# Mix columns.
 	quarterround v0, v4, v8, v12
 	quarterround v1, v5, v9, v13
 	quarterround v2, v6, v10, v14
 	quarterround v3, v7, v11, v15
-	# Mix diagonals. Not VLMUL friendly
+	# Mix diagonals.
 	quarterround v0, v5, v10, v15
 	quarterround v1, v6, v11, v12
 	quarterround v2, v7, v8, v13
@@ -149,9 +151,10 @@ round_loop:
 	vadd.vx v14, v14, t0
 	ld t0, 8(a4)
 	vadd.vx v15, v15, t0
-	
-	# out of inner loop, xor in state
+
 	# load in vector lanes with two strided segment loads
+	# in case this is the final block, reset vl to full blocks
+	vsetvli t5, t4, e32
 	li t0, 64
 	vlsseg8e.v v16, (a1), t0
 	add a1, a1, 32
@@ -183,22 +186,63 @@ round_loop:
 	add a0, a0, -32
 
 	# update counters/pointers
-	slli t0, t1, 6 # current VL in bytes
+	slli t0, t5, 6 # current VL in bytes
 	add a0, a0, t0 # advance output pointer
 	add a1, a1, t0 # advance input pointer
+	sub a2, a2, t0 # decrement remaining bytes
 	sub t3, t3, t1 # decrement remaining blocks
+	sub t4, t4, t1 # decrement remaining blocks
 	# TODO: crash if counter overflows
 	add a5, a5, t1 # increment counter
 
 	# loop again if we have remaining blocks
 	bne x0, t3, encrypt_blocks
 
-	# TODO: if there is a partial block
-	# extract the final words one at a time
-	# There doesn't seem to be an indexed extract, so
-	#  vslidedown.vx N
-	#  vmv.x.s t3, vx
-	#  sw sp[x], t3
-	# Then use vl to copy the correct number of bytes
+	# we're done if there are no more remaining bytes from a partial block
+	beq zero, a2, return
 
+	# to get the remaining partial block, we transfer the nth element of
+	# all the state vectors into contiguous stack memory with vsseg, then
+	# read them with byte-granularity vl
+
+	# reconstruct vl for all computed blocks
+	add t0, t3, t1
+	vsetvli t0, t0, e32
+	add t0, t0, -1
+
+	#vse.v v4, (a0)
+	#j return
+
+	# use a masked vsseg instead of sliding everything down?
+	# both options seem like they might touch a lot of vector state...
+	vslidedown.vx v16, v0, t0
+	vslidedown.vx v17, v1, t0
+	vslidedown.vx v18, v2, t0
+	vslidedown.vx v19, v3, t0
+	vslidedown.vx v20, v4, t0
+	vslidedown.vx v21, v5, t0
+	vslidedown.vx v22, v6, t0
+	vslidedown.vx v23, v7, t0
+	vslidedown.vx v24, v8, t0
+	vslidedown.vx v25, v9, t0
+	vslidedown.vx v26, v10, t0
+	vslidedown.vx v27, v11, t0
+	vslidedown.vx v28, v12, t0
+	vslidedown.vx v29, v13, t0
+	vslidedown.vx v30, v14, t0
+	vslidedown.vx v31, v15, t0
+	li t0, 1
+	vsetvli zero, t0, e32
+	vsseg8e.v v16, (sp)
+	addi t0, sp, 32
+	vsseg8e.v v24, (t0)
+
+	# this might not fit in one vector, but fails when VLMUL is higher?
+	vsetvli a2, a2, e8
+	vle.v v0, (a1)
+	vle.v v8, (sp)
+	vxor.vv v0, v0, v8
+	vse.v v0, (a0)
+
+return:
 	ret
