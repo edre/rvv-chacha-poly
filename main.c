@@ -19,43 +19,80 @@ void println_hex(uint8_t* data, int size) {
 
 extern uint64_t instruction_counter();
 
-void test_chacha() {
+const char* pass_str = "\x1b[32mPASS\x1b[0m";
+const char* fail_str = "\x1b[31mFAIL\x1b[0m";
+
+bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const uint8_t nonce[12], bool verbose) {
   extern void vector_chacha20(uint8_t *out, const uint8_t *in,
 			      size_t in_len, const uint8_t key[32],
 			      const uint8_t nonce[12], uint32_t counter);
+  uint8_t* golden = malloc(len);
+  memset(golden, 0, len);
+  uint64_t start = instruction_counter();
+  boring_chacha20(golden, data, len, key, nonce, 0);
+  uint64_t end = instruction_counter();
+  uint64_t boring_count = end - start;
 
-  const int len = 64 * 101;
-  uint8_t data[len];
+  uint8_t* vector = malloc(len + 4);
+  memset(vector, 0, len+4);
+  start = instruction_counter();
+  vector_chacha20(vector, data, len, key, nonce, 0);
+  end = instruction_counter();
+
+  bool pass = memcmp(golden, vector, len) == 0;
+
+  if (verbose || !pass) {
+    printf("golden: ");
+    println_hex(golden, 32);
+    printf("inst_count=%d, inst/byte=%.02f\n", boring_count, (float)(boring_count)/len);
+    printf("vector: ");
+    println_hex(vector, 32);
+    printf("inst_count=%d, inst/byte=%.02f\n", end - start, (float)(end - start)/len);
+  }
+
+  uint32_t past_end = vector[len];
+  if (past_end != 0) {
+    printf("vector wrote past end %08x\n", past_end);
+    pass = false;
+  }
+
+  free(golden);
+  free(vector);
+
+  return pass;
+}
+
+void test_chachas(FILE* f) {
+  int len = 1024 - 11;
+  uint8_t* data = malloc(len);
   uint32_t rand = 1;
   for (int i = 0; i < len; i++) {
     rand *= 101;
     rand %= 16777213; // random prime
     data[i] = (uint8_t)(rand);
   }
-  const uint8_t key[32] = "Setec astronomy;too many secrets";
-  const uint8_t nonce[12] = "BurnAfterUse";
+  uint8_t key[32] = "Setec astronomy;too many secrets";
+  uint8_t nonce[12] = "BurnAfterUse";
   int counter = 0;
 
-  uint8_t golden[len];
-  uint64_t start = instruction_counter();
-  boring_chacha20(golden, (const uint8_t*)(data), len, key, nonce, counter);
-  uint64_t end = instruction_counter();
-  printf("golden: ");
-  println_hex(golden, 32);
-  printf("inst_count=%d, inst/byte=%.02f\n", end - start, (float)(end - start)/len);
+  bool pass = test_chacha(data, len, key, nonce, true);
 
-  uint8_t vector[len];
-  start = instruction_counter();
-  vector_chacha20(vector, (const uint8_t*)(data), len, key, nonce, counter);
-  end = instruction_counter();
-  printf("vector: ");
-  println_hex(vector, 32);
-  printf("inst_count=%d, inst/byte=%.02f\n", end - start, (float)(end - start)/len);
+  if (pass) {
+    for (int i = 1, len = 1; len < 1000; len += i++) {
+      fread(key, 32, 1, f);
+      fread(nonce, 12, 1, f);
+      if (!test_chacha(data, len, key, nonce, false)) {
+	printf("Failed with len=%d\n", len);
+	pass = false;
+	break;
+      }
+    }
+  }
 
-  if (memcmp(golden, vector, len)) {
-    printf("chacha FAIL\n");
+  if (pass) {
+    printf("chacha %s\n", pass_str);
   } else {
-    printf("chacha PASS\n");
+    printf("chacha %s\n", fail_str);
   }
 }
 
@@ -94,7 +131,7 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
   return pass;
 }
 
-void test_polys() {
+void test_polys(FILE* f) {
   const int big_len = 1024;
   uint8_t *zero = malloc(2000);
   uint8_t *max_bits = malloc(big_len);
@@ -109,7 +146,6 @@ void test_polys() {
     goto end;
 
   // random test
-  FILE* f = fopen("/dev/urandom", "r");
   const int max_len = 1000;
   uint8_t *rand = malloc(max_len);
   for (int len = 16; len <= max_len; len += 16) {
@@ -122,13 +158,12 @@ void test_polys() {
     }
   }
   free(rand);
-  fclose(f);
 
  end:
   if (pass) {
-    printf("poly PASS\n");
+    printf("poly %s\n", pass_str);
   } else {
-    printf("poly FAIL\n");
+    printf("poly %s\n", fail_str);
   }
 
   free(zero);
@@ -138,7 +173,9 @@ void test_polys() {
 int main(int argc, uint8_t *argv[]) {
   extern uint32_t vlmax_u32();
   printf("VLMAX in blocks: %d\n", vlmax_u32());
-  test_chacha();
+  FILE* rand = fopen("/dev/urandom", "r");
+  test_chachas(rand);
   printf("\n");
-  test_polys();
+  test_polys(rand);
+  fclose(rand);
 }
