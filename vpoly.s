@@ -1,5 +1,16 @@
-# Might be easier to code this with C intrinsics,
-# but rvv_vector.h seems to be closed source.
+# Copyright 2020 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License") ;
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 .global vector_poly1305
 # poly1305
@@ -28,6 +39,9 @@
 #   vector sum reduce polynomial vector into scalar
 #   add to s
 #   extract 16-byte hash
+
+# TODO: implement this with C intrinsics in rvv_vector.h, as register
+# allocation is actually annoying.
 
 # Generic 130-bit multiply/mod code
 # Reads 5-limbed inputs from a and b, writes result to a
