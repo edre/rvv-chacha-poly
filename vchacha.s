@@ -170,9 +170,9 @@ round_loop:
 	# in case this is the final block, reset vl to full blocks
 	vsetvli t5, t4, e32
 	li t0, 64
-	vlsseg8e.v v16, (a1), t0
+	vlsseg8e32.v v16, (a1), t0
 	add a1, a1, 32
-	vlsseg8e.v v24, (a1), t0
+	vlsseg8e32.v v24, (a1), t0
 	add a1, a1, -32
 
 	# xor in state
@@ -194,9 +194,9 @@ round_loop:
 	vxor.vv v31, v31, v15
 
 	# write back out with 2 strided segment stores
-	vssseg8e.v v16, (a0), t0
+	vssseg8e32.v v16, (a0), t0
 	add a0, a0, 32
-	vssseg8e.v v24, (a0), t0
+	vssseg8e32.v v24, (a0), t0
 	add a0, a0, -32
 
 	# update counters/pointers
@@ -247,16 +247,16 @@ round_loop:
 	vslidedown.vx v31, v15, t0
 	li t0, 1
 	vsetvli zero, t0, e32
-	vsseg8e.v v16, (sp)
+	vsseg8e32.v v16, (sp)
 	addi t0, sp, 32
-	vsseg8e.v v24, (t0)
+	vsseg8e32.v v24, (t0)
 
 	# this might not fit in one vector, but fails when VLMUL is higher?
 	vsetvli a2, a2, e8
-	vle.v v0, (a1)
-	vle.v v8, (sp)
+	vle8.v v0, (a1)
+	vle8.v v8, (sp)
 	vxor.vv v0, v0, v8
-	vse.v v0, (a0)
+	vse8.v v0, (a0)
 
 return:
 	ret
