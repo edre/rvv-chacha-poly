@@ -17,7 +17,7 @@
 # Dependencies to be installed and on the PATH:
 # https://github.com/riscv/riscv-gnu-toolchain
 # https://github.com/riscv/riscv-isa-sim
-#   configure --prefix=$RISCV --with-varch=v512:e64:s128
+#   configure --prefix=$RISCV --with-varch=v512:e64
 # https://github.com/riscv/riscv-pk
 
 ISA=rv64gcv

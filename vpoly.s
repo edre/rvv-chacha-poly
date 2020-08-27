@@ -352,7 +352,7 @@ precomp:
 	addi t1, t1, 1
 
 	vsetvli t1, t1, e32
-	vlseg4e.v v11, (a0)
+	vlseg4e32.v v11, (a0)
 	# increment pointer
 	slli t0, t1, 4
 	add a0, a0, t0
@@ -381,7 +381,7 @@ vector_loop:
 	vec_mul130 vx v1 v2 v3 v4 v5 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx
 
 	# load in new data: v11-v14
-	vlseg4e.v v11, (a0)
+	vlseg4e32.v v11, (a0)
 	add a0, a0, a5
 	sub a1, a1, a5
 	vec_split5
