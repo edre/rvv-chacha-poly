@@ -262,7 +262,7 @@ continue:
 
 	# a5 is vlmax-1 for e32m1
 	li t0, -1
-	vsetvli a5, t0, e32
+	vsetvli a5, t0, e32, m1, ta, ma
 	addi a5, a5, -1 # vlmax-1
 	# initialize vector to r^1
 	vmv.v.x v6, s0
@@ -351,7 +351,7 @@ precomp:
 	addi a4, a4, 1
 	addi t1, t1, 1
 
-	vsetvli t1, t1, e32
+	vsetvli t1, t1, e32, m1, ta, ma
 	vlseg4e32.v v11, (a0)
 	# increment pointer
 	slli t0, t1, 4
@@ -364,7 +364,7 @@ precomp:
 	vor.vx v24, v24, t0
 
 	li t0, -1
-	vsetvli a5, t0, e32
+	vsetvli a5, t0, e32, m1, ta, ma
 	sub t0, a5, t1
 	slli a5, a5, 4 # block size in bytes
 	vslideup.vx v1, v20, t0
