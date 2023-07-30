@@ -215,6 +215,7 @@
 # current accumulated vector state: v1, v2, v3, v4, v5
 vector_poly1305:
 	# save registers
+	addi sp, sp, -96
 	sd s0, 0(sp)
 	sd s1, 8(sp)
 	sd s2, 16(sp)
@@ -494,4 +495,5 @@ return:
 	ld s8, 64(sp)
 	ld s9, 72(sp)
 	ld s11, 80(sp)
+	addi sp, sp, 96
 	ret
