@@ -122,7 +122,7 @@ round_loop:
 	quarterround v1, v6, v11, v12
 	quarterround v2, v7, v8, v13
 	quarterround v3, v4, v9, v14
-	
+
 	addi t2, t2, -1
 	bnez t2, round_loop
 
@@ -251,8 +251,7 @@ round_loop:
 	vsseg8e32.v v16, (t0)
 	vsseg8e32.v v24, (t1)
 
-	# this might not fit in one vector, but fails when VLMUL is higher?
-	vsetvli a2, a2, e8, m8
+	vsetvli a2, a2, e8, m8, ta, ma
 	vle8.v v0, (a1)
 	vle8.v v8, (t0)
 	vxor.vv v0, v0, v8

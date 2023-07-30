@@ -105,7 +105,7 @@
 	vnsrl.wi \a, \d, 0 \mask
 	vand.vx \a, \a, t0 \mask
 	.endm
-	
+
 	vmv.v.i \carry, 0
 	carry_prop\x \a0, \d0
 	carry_prop\x \a1, \d1
@@ -215,18 +215,17 @@
 # current accumulated vector state: v1, v2, v3, v4, v5
 vector_poly1305:
 	# save registers
-	addi sp, sp, -96
-	sd s0, 0(sp)
-	sd s1, 8(sp)
-	sd s2, 16(sp)
-	sd s3, 24(sp)
-	sd s4, 32(sp)
-	sd s5, 40(sp)
-	sd s6, 48(sp)
-	sd s7, 56(sp)
-	sd s8, 64(sp)
-	sd s9, 72(sp)
-	sd s11, 80(sp)
+	sd s0, -8(sp)
+	sd s1, -16(sp)
+	sd s2, -24(sp)
+	sd s3, -32(sp)
+	sd s4, -40(sp)
+	sd s5, -48(sp)
+	sd s6, -56(sp)
+	sd s7, -64(sp)
+	sd s8, -72(sp)
+	sd s9, -80(sp)
+	sd s11, -88(sp)
 
 	# assert input is a multiple of blocksize
 	andi t0, a1, 0xf
@@ -312,7 +311,7 @@ precomp:
 	# end of precomp loop:
 	slli a4, a4, 1 # double exponent
 	blt a4, a5, precomp
-	
+
 	# store post-precomputation instruction counter
 	rdinstret s11
 
@@ -484,16 +483,15 @@ end_vector_loop:
 return:
 	# restore registers
 	mv a0, s11
-	ld s0, 0(sp)
-	ld s1, 8(sp)
-	ld s2, 16(sp)
-	ld s3, 24(sp)
-	ld s4, 32(sp)
-	ld s5, 40(sp)
-	ld s6, 48(sp)
-	ld s7, 56(sp)
-	ld s8, 64(sp)
-	ld s9, 72(sp)
-	ld s11, 80(sp)
-	addi sp, sp, 96
+	ld s0, -8(sp)
+	ld s1, -16(sp)
+	ld s2, -24(sp)
+	ld s3, -32(sp)
+	ld s4, -40(sp)
+	ld s5, -48(sp)
+	ld s6, -56(sp)
+	ld s7, -64(sp)
+	ld s8, -72(sp)
+	ld s9, -80(sp)
+	ld s11, -88(sp)
 	ret
