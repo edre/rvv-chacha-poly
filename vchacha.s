@@ -21,8 +21,7 @@ instruction_counter:
 	ret
 
 vlmax_u32:
-	li a0, -1
-	vsetvli a0, a0, e32
+	vsetvli a0, x0, e32, m1, ta, ma
 	ret
 
 
@@ -48,7 +47,7 @@ vector_chacha20:
 	srli t3, t0, 6
 encrypt_blocks:
 	# initialize vector state
-	vsetvli t1, t3, e32
+	vsetvli t1, t3, e32, m1, ta, ma
 	# Load 128 bit constant
 	li t0, 0x61707865 # "expa" little endian
 	vmv.v.x v0, t0
@@ -168,7 +167,7 @@ round_loop:
 
 	# load in vector lanes with two strided segment loads
 	# in case this is the final block, reset vl to full blocks
-	vsetvli t5, t4, e32
+	vsetvli t5, t4, e32, m1, ta, ma
 	li t0, 64
 	vlsseg8e32.v v16, (a1), t0
 	add a1, a1, 32
@@ -221,7 +220,7 @@ round_loop:
 
 	# reconstruct vl for all computed blocks
 	add t0, t3, t1
-	vsetvli t0, t0, e32
+	vsetvli t0, t0, e32, m1, ta, ma
 	add t0, t0, -1
 
 	#vse.v v4, (a0)
@@ -246,17 +245,19 @@ round_loop:
 	vslidedown.vx v30, v14, t0
 	vslidedown.vx v31, v15, t0
 	li t0, 1
-	vsetvli zero, t0, e32
-	vsseg8e32.v v16, (sp)
-	addi t0, sp, 32
-	vsseg8e32.v v24, (t0)
+	vsetvli zero, t0, e32, m1, ta, ma
+	addi t0, sp, -64
+	addi t1, sp, -32
+	vsseg8e32.v v16, (t0)
+	vsseg8e32.v v24, (t1)
 
 	# this might not fit in one vector, but fails when VLMUL is higher?
-	vsetvli a2, a2, e8
+	vsetvli a2, a2, e8, m8
 	vle8.v v0, (a1)
-	vle8.v v8, (sp)
+	vle8.v v8, (t0)
 	vxor.vv v0, v0, v8
 	vse8.v v0, (a0)
+
 
 return:
 	ret
