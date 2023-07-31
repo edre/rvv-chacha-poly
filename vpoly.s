@@ -227,7 +227,7 @@ vector_poly1305:
 	sd s9, -80(sp)
 	sd s11, -88(sp)
 
-	# assert input is a multiple of blocksize
+	# make sure input is a multiple of blocksize
 	andi t0, a1, 0xf
 	beq t0, zero, continue
 	li t0, 0x3713 # magic error number
@@ -345,7 +345,7 @@ precomp:
 	# a4: blocks left
 	srli a4, a1, 4
 	# t1: blocks in initial step
-	# if blocks are a multiple of vector size, use a full vector here
+	# use a full vector here, if blocks are a multiple of vector size
 	addi a4, a4, -1
 	and t1, a4, a5
 	addi a4, a4, 1
