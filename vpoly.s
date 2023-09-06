@@ -424,7 +424,7 @@ end_vector_loop:
 	vwredsum.vs v10, v5, v10
 	# extract to scalars
 	li t0, 1
-	vsetvli zero, t0, e64, ta, ma
+	vsetvli zero, t0, e64, m1, ta, ma
 	vmv.x.s s0, v6
 	vmv.x.s s1, v7
 	vmv.x.s s2, v8
