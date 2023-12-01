@@ -158,11 +158,11 @@ round_loop:
 	vadd.vv v12, v12, v16
 	vadd.vx v12, v12, a5
 	# Load nonce
-	ld t0, 0(a4)
+	lw t0, 0(a4)
 	vadd.vx v13, v13, t0
-	ld t0, 4(a4)
+	lw t0, 4(a4)
 	vadd.vx v14, v14, t0
-	ld t0, 8(a4)
+	lw t0, 8(a4)
 	vadd.vx v15, v15, t0
 
 	# load in vector lanes with two strided segment loads
