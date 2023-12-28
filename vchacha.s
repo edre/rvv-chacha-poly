@@ -78,11 +78,11 @@ encrypt_blocks:
 	vid.v v12
 	vadd.vx v12, v12, a5
 	# Load nonce
-	ld t0, 0(a4)
+	lw t0, 0(a4)
 	vmv.v.x v13, t0
-	ld t0, 4(a4)
+	lw t0, 4(a4)
 	vmv.v.x v14, t0
-	ld t0, 8(a4)
+	lw t0, 8(a4)
 	vmv.v.x v15, t0
 
 	li t2, 10 # loop counter
