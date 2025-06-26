@@ -75,6 +75,34 @@ vor.vv \a, \a, v16
 	srli t4, a2, 6
 	addi t0, a2, 63
 	srli t3, t0, 6
+
+	# Save enough registers to only load key and nonce once.
+	sd s0, -8(sp)
+	sd s1, -16(sp)
+	sd s2, -24(sp)
+	sd s3, -32(sp)
+	sd s4, -40(sp)
+	sd s5, -48(sp)
+	sd s6, -56(sp)
+	sd s7, -64(sp)
+	sd s8, -72(sp)
+	sd s9, -80(sp)
+	sd s10, -88(sp)
+	addi sp, sp, -96
+	# Load key into registers.
+	lw s0, 0(a3)
+	lw s1, 4(a3)
+	lw s2, 8(a3)
+	lw s3, 12(a3)
+	lw s4, 16(a3)
+	lw s5, 20(a3)
+	lw s6, 24(a3)
+	lw s7, 28(a3)
+	# Load nonce into registers.
+	lw s8, 0(a4) 
+	lw s9, 4(a4) 
+	lw s10, 8(a4) 
+
 encrypt_blocks_\name:
 	# initialize vector state
 	vsetvli t1, t3, e32, m1, ta, ma
@@ -88,32 +116,21 @@ encrypt_blocks_\name:
 	li t0, 0x6b206574 # "te k" little endian
 	vmv.v.x v3, t0
 	# Load key
-	lw t0, 0(a3)
-	vmv.v.x v4, t0
-	lw t0, 4(a3)
-	vmv.v.x v5, t0
-	lw t0, 8(a3)
-	vmv.v.x v6, t0
-	lw t0, 12(a3)
-	vmv.v.x v7, t0
-	lw t0, 16(a3)
-	vmv.v.x v8, t0
-	lw t0, 20(a3)
-	vmv.v.x v9, t0
-	lw t0, 24(a3)
-	vmv.v.x v10, t0
-	lw t0, 28(a3)
-	vmv.v.x v11, t0
+	vmv.v.x v4, s0
+	vmv.v.x v5, s1
+	vmv.v.x v6, s2
+	vmv.v.x v7, s3
+	vmv.v.x v8, s4
+	vmv.v.x v9, s5
+	vmv.v.x v10, s6
+	vmv.v.x v11, s7
 	# Load counter, and increment for each element
 	vid.v v12
 	vadd.vx v12, v12, a5
 	# Load nonce
-	lw t0, 0(a4)
-	vmv.v.x v13, t0
-	lw t0, 4(a4)
-	vmv.v.x v14, t0
-	lw t0, 8(a4)
-	vmv.v.x v15, t0
+	vmv.v.x v13, s8
+	vmv.v.x v14, s9
+	vmv.v.x v15, s10
 
 	li t2, 10 # loop counter
 round_loop_\name:
@@ -142,33 +159,22 @@ round_loop_\name:
 	li t0, 0x6b206574 # "te k" little endian
 	vadd.vx v3, v3, t0
 	# Add key
-	lw t0, 	0(a3)
-	vadd.vx v4, v4, t0
-	lw t0, 4(a3)
-	vadd.vx v5, v5, t0
-	lw t0, 8(a3)
-	vadd.vx v6, v6, t0
-	lw t0, 12(a3)
-	vadd.vx v7, v7, t0
-	lw t0, 16(a3)
-	vadd.vx v8, v8, t0
-	lw t0, 20(a3)
-	vadd.vx v9, v9, t0
-	lw t0, 24(a3)
-	vadd.vx v10, v10, t0
-	lw t0, 28(a3)
-	vadd.vx v11, v11, t0
+	vadd.vx v4, v4, s0
+	vadd.vx v5, v5, s1
+	vadd.vx v6, v6, s2
+	vadd.vx v7, v7, s3
+	vadd.vx v8, v8, s4
+	vadd.vx v9, v9, s5
+	vadd.vx v10, v10, s6
+	vadd.vx v11, v11, s7
 	# Add counter
 	vid.v v16
 	vadd.vv v12, v12, v16
 	vadd.vx v12, v12, a5
 	# Add nonce
-	lw t0, 0(a4)
-	vadd.vx v13, v13, t0
-	lw t0, 4(a4)
-	vadd.vx v14, v14, t0
-	lw t0, 8(a4)
-	vadd.vx v15, v15, t0
+	vadd.vx v13, v13, s8
+	vadd.vx v14, v14, s9
+	vadd.vx v15, v15, s10
 
 	# load in vector lanes with two strided segment loads
 	# in case this is the final block, reset vl to full blocks
@@ -228,9 +234,6 @@ round_loop_\name:
 	vsetvli t0, t0, e32, m1, ta, ma
 	add t0, t0, -1
 
-	#vse.v v4, (a0)
-	#j return
-
 	# use a masked vsseg instead of sliding everything down?
 	# both options seem like they might touch a lot of vector state...
 	vslidedown.vx v16, v0, t0
@@ -263,6 +266,19 @@ round_loop_\name:
 	vse8.v v0, (a0)
 
 return_\name:
+	# restore registers
+	addi sp, sp, 96
+	ld s0, -8(sp)
+	ld s1, -16(sp)
+	ld s2, -24(sp)
+	ld s3, -32(sp)
+	ld s4, -40(sp)
+	ld s5, -48(sp)
+	ld s6, -56(sp)
+	ld s7, -64(sp)
+	ld s8, -72(sp)
+	ld s9, -80(sp)
+	ld s10, -88(sp)
 	ret
 .endm
 
