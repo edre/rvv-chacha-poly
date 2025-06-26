@@ -18,5 +18,5 @@
 # https://github.com/riscv/riscv-gnu-toolchain
 # I got qemu from my package manager.
 
-riscv64-unknown-elf-gcc -march=rv64gcv main.c boring.c vchacha.s vpoly.s -o main -O &&
-    qemu-riscv64 -cpu rv64,v=true,vlen=512 main
+riscv64-unknown-elf-gcc -march=rv64gcv_zvkb main.c boring.c vchacha.s vpoly.s -o main -O -static &&
+    qemu-riscv64 -cpu rv64,v=true,vlen=512,zvkb=true main
