@@ -97,7 +97,7 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
 }
 
 void test_chachas(FILE* f) {
-  int len = 1024 - 11;
+  int len = 64*1024 - 11;
   uint8_t* data = malloc(len);
   uint32_t rand = 1;
   for (int i = 0; i < len; i++) {
@@ -166,7 +166,7 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
 }
 
 void test_polys(FILE* f) {
-  const int big_len = 1024;
+  const int big_len = 64*1024;
   uint8_t *zero = malloc(2000);
   uint8_t *max_bits = malloc(big_len);
   memset(max_bits, 0xff, big_len);

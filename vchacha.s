@@ -32,8 +32,8 @@ vror.vi \a, \a, 32-\r
 
 .macro vrotl_emulated a, r
 vsll.vi v16, \a, \r
-vsrl.vi \a, \a, 32-\r
-vor.vv \a, \a, v16
+vsrl.vi v17, \a, 32-\r
+vor.vv \a, v16, v17
 .endm
 
 .macro quarterround name a b c d
@@ -84,10 +84,10 @@ vor.vv \a, \a, v16
 	# t3 = remaining 64-byte blocks to mix
 	# t4 = remaining full blocks to read/write
 	#  (if t3 and t4 are different by one, there is a partial block to manually xor)
-	# t1 = vl in 64-byte blocks
+	# t2 = vl in 64-byte blocks
 	srli t4, a2, 6
-	addi t0, a2, 63
-	srli t3, t0, 6
+	addi t3, a2, 63
+	srli t3, t3, 6
 
 	# Save enough registers to only load key and nonce once.
 	sd s0, -8(sp)
@@ -115,19 +115,20 @@ vor.vv \a, \a, v16
 	lw s8, 0(a4) 
 	lw s9, 4(a4) 
 	lw s10, 8(a4) 
+	# Load constant into registers.
+	li a3, 0x61707865 # "expa" little endian
+	li a4, 0x3320646e # "nd 3" little endian
+	li a6, 0x79622d32 # "2-by" little endian
+	li a7, 0x6b206574 # "te k" little endian
 
 encrypt_blocks_\name:
 	# initialize vector state
-	vsetvli t1, t3, e32, m1, ta, ma
+	vsetvli t2, t3, e32, m1, ta, ma
 	# Load 128 bit constant
-	li t0, 0x61707865 # "expa" little endian
-	vmv.v.x v0, t0
-	li t0, 0x3320646e # "nd 3" little endian
-	vmv.v.x v1, t0
-	li t0, 0x79622d32 # "2-by" little endian
-	vmv.v.x v2, t0
-	li t0, 0x6b206574 # "te k" little endian
-	vmv.v.x v3, t0
+	vmv.v.x v0, a3
+	vmv.v.x v1, a4
+	vmv.v.x v2, a6
+	vmv.v.x v3, a7
 	# Load key
 	vmv.v.x v4, s0
 	vmv.v.x v5, s1
@@ -159,14 +160,10 @@ encrypt_blocks_\name:
 
 	# Add in initial block values.
 	# 128 bit constant
-	li t0, 0x61707865 # "expa" little endian
-	vadd.vx v0, v0, t0
-	li t0, 0x3320646e # "nd 3" little endian
-	vadd.vx v1, v1, t0
-	li t0, 0x79622d32 # "2-by" little endian
-	vadd.vx v2, v2, t0
-	li t0, 0x6b206574 # "te k" little endian
-	vadd.vx v3, v3, t0
+	vadd.vx v0, v0, a3
+	vadd.vx v1, v1, a4
+	vadd.vx v2, v2, a6
+	vadd.vx v3, v3, a7
 	# Add key
 	vadd.vx v4, v4, s0
 	vadd.vx v5, v5, s1
@@ -219,14 +216,14 @@ encrypt_blocks_\name:
 	add a0, a0, -32
 
 	# update counters/pointers
-	slli t0, t5, 6 # current VL in bytes
-	add a0, a0, t0 # advance output pointer
-	add a1, a1, t0 # advance input pointer
-	sub a2, a2, t0 # decrement remaining bytes
-	sub t3, t3, t1 # decrement remaining blocks
-	sub t4, t4, t1 # decrement remaining blocks
+	slli t5, t5, 6 # current VL in bytes
+	add a0, a0, t5 # advance output pointer
+	add a1, a1, t5 # advance input pointer
+	sub a2, a2, t5 # decrement remaining bytes
+	sub t3, t3, t2 # decrement remaining blocks
+	sub t4, t4, t2 # decrement remaining blocks
 	# TODO: crash if counter overflows
-	add a5, a5, t1 # increment counter
+	add a5, a5, t2 # increment counter
 
 	# loop again if we have remaining blocks
 	bnez t3, encrypt_blocks_\name
@@ -239,7 +236,7 @@ encrypt_blocks_\name:
 	# read them with byte-granularity vl
 
 	# reconstruct vl for all computed blocks
-	add t0, t3, t1
+	add t0, t3, t2
 	vsetvli t0, t0, e32, m1, ta, ma
 	add t0, t0, -1
 
