@@ -14,6 +14,7 @@
 
 .global instruction_counter
 .global vector_chacha20
+.global vector_chacha20_zvkb
 .global vlmax_u32
 
 instruction_counter:
@@ -24,6 +25,35 @@ vlmax_u32:
 	vsetvli a0, x0, e32, m1, ta, ma
 	ret
 
+
+.macro vrotl_native a, r
+vror.vi \a, \a, 32-\r
+.endm
+
+.macro vrotl_emulated a, r
+vsll.vi v16, \a, \r
+vsrl.vi \a, \a, 32-\r
+vor.vv \a, \a, v16
+.endm
+
+.macro quarterround name a b c d
+	# a += b; d ^= a; d <<<= 16;
+	vadd.vv \a, \a, \b
+	vxor.vv \d, \d, \a
+	vrotl_\name \d, 16
+	# c += d; b ^= c; b <<<= 12;
+	vadd.vv \c, \c, \d
+	vxor.vv \b, \b, \c
+	vrotl_\name \b, 12
+	# a += b; d ^= a; d <<<= 8;
+	vadd.vv \a, \a, \b
+	vxor.vv \d, \d, \a
+	vrotl_\name \d, 8
+	# c += d; b ^= c; b <<<= 7;
+	vadd.vv \c, \c, \d
+	vxor.vv \b, \b, \c
+	vrotl_\name \b, 7
+.endm
 
 # Cell-based implementation strategy:
 # v0-v15: Cell vectors. Each element is from a different block
@@ -36,7 +66,7 @@ vlmax_u32:
 # a3 = uint8_t key[32]
 # a4 = uint8_t nonce[12]
 # a5 = uint32_t counter
-vector_chacha20:
+.macro CHACHA_FUNC_BODY name
 	# a2 = initial length in bytes
 	# t3 = remaining 64-byte blocks to mix
 	# t4 = remaining full blocks to read/write
@@ -45,7 +75,7 @@ vector_chacha20:
 	srli t4, a2, 6
 	addi t0, a2, 63
 	srli t3, t0, 6
-encrypt_blocks:
+encrypt_blocks_\name:
 	# initialize vector state
 	vsetvli t1, t3, e32, m1, ta, ma
 	# Load 128 bit constant
@@ -86,45 +116,20 @@ encrypt_blocks:
 	vmv.v.x v15, t0
 
 	li t2, 10 # loop counter
-round_loop:
-	.macro vrotl a r
-	vsll.vi v16, \a, \r
-	vsrl.vi \a, \a, 32-\r
-	vor.vv \a, \a, v16
-	.endm
-
-	.macro quarterround a b c d
-	# a += b; d ^= a; d <<<= 16;
-	vadd.vv \a, \a, \b
-	vxor.vv \d, \d, \a
-	vrotl \d, 16
-	# c += d; b ^= c; b <<<= 12;
-	vadd.vv \c, \c, \d
-	vxor.vv \b, \b, \c
-	vrotl \b, 12
-	# a += b; d ^= a; d <<<= 8;
-	vadd.vv \a, \a, \b
-	vxor.vv \d, \d, \a
-	vrotl \d, 8
-	# c += d; b ^= c; b <<<= 7;
-	vadd.vv \c, \c, \d
-	vxor.vv \b, \b, \c
-	vrotl \b, 7
-	.endm
-
+round_loop_\name:
 	# Mix columns.
-	quarterround v0, v4, v8, v12
-	quarterround v1, v5, v9, v13
-	quarterround v2, v6, v10, v14
-	quarterround v3, v7, v11, v15
+	quarterround \name, v0, v4, v8, v12
+	quarterround \name, v1, v5, v9, v13
+	quarterround \name, v2, v6, v10, v14
+	quarterround \name, v3, v7, v11, v15
 	# Mix diagonals.
-	quarterround v0, v5, v10, v15
-	quarterround v1, v6, v11, v12
-	quarterround v2, v7, v8, v13
-	quarterround v3, v4, v9, v14
+	quarterround \name, v0, v5, v10, v15
+	quarterround \name, v1, v6, v11, v12
+	quarterround \name, v2, v7, v8, v13
+	quarterround \name, v3, v4, v9, v14
 
 	addi t2, t2, -1
-	bnez t2, round_loop
+	bnez t2, round_loop_\name
 
 	# Add in initial block values.
 	# 128 bit constant
@@ -157,7 +162,7 @@ round_loop:
 	vid.v v16
 	vadd.vv v12, v12, v16
 	vadd.vx v12, v12, a5
-	# Load nonce
+	# Add nonce
 	lw t0, 0(a4)
 	vadd.vx v13, v13, t0
 	lw t0, 4(a4)
@@ -209,10 +214,10 @@ round_loop:
 	add a5, a5, t1 # increment counter
 
 	# loop again if we have remaining blocks
-	bne x0, t3, encrypt_blocks
+	bnez t3, encrypt_blocks_\name
 
 	# we're done if there are no more remaining bytes from a partial block
-	beq zero, a2, return
+	beqz a2, return_\name
 
 	# to get the remaining partial block, we transfer the nth element of
 	# all the state vectors into contiguous stack memory with vsseg, then
@@ -257,6 +262,17 @@ round_loop:
 	vxor.vv v0, v0, v8
 	vse8.v v0, (a0)
 
-
-return:
+return_\name:
 	ret
+.endm
+
+
+# TODO: dynamically check for Zvkb extension at runtime and jump to the correct implementation.
+# There doesn't seem to be a standard for sub-extension probing yet.
+# Technically any chip that implements both V and K should include Zvkb, but qemu 10.0 doesn't support that.
+
+vector_chacha20:
+	CHACHA_FUNC_BODY emulated
+
+vector_chacha20_zvkb:
+	CHACHA_FUNC_BODY native

@@ -40,6 +40,9 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
   extern void vector_chacha20(uint8_t *out, const uint8_t *in,
 			      size_t in_len, const uint8_t key[32],
 			      const uint8_t nonce[12], uint32_t counter);
+  extern void vector_chacha20_zvkb(uint8_t *out, const uint8_t *in,
+			           size_t in_len, const uint8_t key[32],
+			           const uint8_t nonce[12], uint32_t counter);
   uint8_t* golden = malloc(len);
   memset(golden, 0, len);
   uint64_t start = instruction_counter();
@@ -52,8 +55,16 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
   start = instruction_counter();
   vector_chacha20(vector, data, len, key, nonce, 0);
   end = instruction_counter();
+  uint64_t vector_count = end-start;
 
-  bool pass = memcmp(golden, vector, len) == 0;
+  uint8_t* vector_rotate = malloc(len+4);
+  memset(vector_rotate, 0, len+4);
+  start = instruction_counter();
+  vector_chacha20_zvkb(vector_rotate, data, len, key, nonce, 0);
+  end = instruction_counter();
+  uint64_t vector_rotate_count = end-start;
+
+  bool pass = memcmp(golden, vector, len) == 0 && memcmp(golden, vector_rotate, len) == 0;
 
   if (verbose || !pass) {
     printf("golden: ");
@@ -61,7 +72,10 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
     printf("inst_count=%ld, inst/byte=%.02f\n", boring_count, (float)(boring_count)/len);
     printf("vector: ");
     println_hex(vector, 32);
-    printf("inst_count=%ld, inst/byte=%.02f\n", end - start, (float)(end - start)/len);
+    printf("inst_count=%ld, inst/byte=%.02f\n", vector_count, (float)(vector_count)/len);
+    printf("rotate: ");
+    println_hex(vector_rotate, 32);
+    printf("inst_count=%ld, inst/byte=%.02f\n", vector_rotate_count, (float)(vector_rotate_count)/len);
   }
 
   uint32_t past_end = vector[len];
@@ -69,9 +83,15 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
     printf("vector wrote past end %08x\n", past_end);
     pass = false;
   }
+  past_end = vector_rotate[len];
+  if (past_end != 0) {
+    printf("vector w/ rotate wrote past end %08x\n", past_end);
+    pass = false;
+  }
 
   free(golden);
   free(vector);
+  free(vector_rotate);
 
   return pass;
 }
