@@ -58,10 +58,10 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
   if (verbose || !pass) {
     printf("golden: ");
     println_hex(golden, 32);
-    printf("inst_count=%d, inst/byte=%.02f\n", boring_count, (float)(boring_count)/len);
+    printf("inst_count=%ld, inst/byte=%.02f\n", boring_count, (float)(boring_count)/len);
     printf("vector: ");
     println_hex(vector, 32);
-    printf("inst_count=%d, inst/byte=%.02f\n", end - start, (float)(end - start)/len);
+    printf("inst_count=%ld, inst/byte=%.02f\n", end - start, (float)(end - start)/len);
   }
 
   uint32_t past_end = vector[len];
@@ -133,10 +133,10 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
   if (verbose || !pass) {
     printf("boring mac: ");
     println_hex(sig, 16);
-    printf("inst_count=%d, inst/byte=%.02f\n", boring_count, (float)(boring_count)/len);
+    printf("inst_count=%ld, inst/byte=%.02f\n", boring_count, (float)(boring_count)/len);
     printf("vector mac: ");
     println_hex(sig2, 16);
-    printf("precomputation=%d, processing=%d, inst/byte=%.02f\n",
+    printf("precomputation=%ld, processing=%ld, inst/byte=%.02f\n",
 	   mid - start, end - mid, (float)(end - mid)/len);
   }
 
