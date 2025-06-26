@@ -55,6 +55,19 @@ vor.vv \a, \a, v16
 	vrotl_\name \b, 7
 .endm
 
+.macro doubleround name
+	# Mix columns.
+	quarterround \name, v0, v4, v8, v12
+	quarterround \name, v1, v5, v9, v13
+	quarterround \name, v2, v6, v10, v14
+	quarterround \name, v3, v7, v11, v15
+	# Mix diagonals.
+	quarterround \name, v0, v5, v10, v15
+	quarterround \name, v1, v6, v11, v12
+	quarterround \name, v2, v7, v8, v13
+	quarterround \name, v3, v4, v9, v14
+.endm
+
 # Cell-based implementation strategy:
 # v0-v15: Cell vectors. Each element is from a different block
 
@@ -132,21 +145,17 @@ encrypt_blocks_\name:
 	vmv.v.x v14, s9
 	vmv.v.x v15, s10
 
-	li t2, 10 # loop counter
-round_loop_\name:
-	# Mix columns.
-	quarterround \name, v0, v4, v8, v12
-	quarterround \name, v1, v5, v9, v13
-	quarterround \name, v2, v6, v10, v14
-	quarterround \name, v3, v7, v11, v15
-	# Mix diagonals.
-	quarterround \name, v0, v5, v10, v15
-	quarterround \name, v1, v6, v11, v12
-	quarterround \name, v2, v7, v8, v13
-	quarterround \name, v3, v4, v9, v14
-
-	addi t2, t2, -1
-	bnez t2, round_loop_\name
+	# Do 20 rounds of mixing.
+	doubleround \name
+	doubleround \name
+	doubleround \name
+	doubleround \name
+	doubleround \name
+	doubleround \name
+	doubleround \name
+	doubleround \name
+	doubleround \name
+	doubleround \name
 
 	# Add in initial block values.
 	# 128 bit constant
