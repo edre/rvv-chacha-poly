@@ -16,11 +16,7 @@
 
 # Dependencies to be installed and on the PATH:
 # https://github.com/riscv/riscv-gnu-toolchain
-# https://github.com/riscv/riscv-isa-sim
-#   configure --prefix=$RISCV --with-varch=v512:e64
-# https://github.com/riscv/riscv-pk
+# I got qemu from my package manager.
 
-ISA=rv64gcv
-
-riscv64-unknown-elf-gcc -march=$ISA main.c boring.c vchacha.s vpoly.s -o main -O &&
-    spike --isa=$ISA `which pk` main
+riscv64-unknown-elf-gcc -march=rv64gcv main.c boring.c vchacha.s vpoly.s -o main -O &&
+    qemu-riscv64 -cpu rv64,v=true,vlen=512 main
