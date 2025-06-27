@@ -59,41 +59,40 @@
 	# ---------------------------------------
 	#      d4      d3      d2      d1      d0
 
-	# would it be more/less performant to do this by rows instead of columns?
-	# vectors pipelining without requiring stalls etc
-	# d0 column
+	# Evaluated by rows to allow instructional parallelism in the accumulation.
+	# b0 row
 	vwmulu.\v \d0, \a0, \b0 \mask
-	vwmaccu.\v \d0, \b51, \a4 \mask
-	vwmaccu.\v \d0, \b52, \a3 \mask
-	vwmaccu.\v \d0, \b53, \a2 \mask
-	vwmaccu.\v \d0, \b54, \a1 \mask
-
-	# d1 column
 	vwmulu.\v \d1, \a1, \b0 \mask
-	vwmaccu.\v \d1, \b1, \a0 \mask
-	vwmaccu.\v \d1, \b52, \a4 \mask
-	vwmaccu.\v \d1, \b53, \a3 \mask
-	vwmaccu.\v \d1, \b54, \a2 \mask
-
-	# d2 column
 	vwmulu.\v \d2, \a2, \b0 \mask
-	vwmaccu.\v \d2, \b1, \a1 \mask
-	vwmaccu.\v \d2, \b2, \a0 \mask
-	vwmaccu.\v \d2, \b53, \a4 \mask
-	vwmaccu.\v \d2, \b54, \a3 \mask
-
-	# d3 column
 	vwmulu.\v \d3, \a3, \b0 \mask
-	vwmaccu.\v \d3, \b1, \a2 \mask
-	vwmaccu.\v \d3, \b2, \a1 \mask
-	vwmaccu.\v \d3, \b3, \a0 \mask
-	vwmaccu.\v \d3, \b54, \a4 \mask
-
-	# d4 column
 	vwmulu.\v \d4, \a4, \b0 \mask
+
+	# b1 row
+	vwmaccu.\v \d0, \b51, \a4 \mask
+	vwmaccu.\v \d1, \b1, \a0 \mask
+	vwmaccu.\v \d2, \b1, \a1 \mask
+	vwmaccu.\v \d3, \b1, \a2 \mask
 	vwmaccu.\v \d4, \b1, \a3 \mask
+
+	# b2 row
+	vwmaccu.\v \d0, \b52, \a3 \mask
+	vwmaccu.\v \d1, \b52, \a4 \mask
+	vwmaccu.\v \d2, \b2, \a0 \mask
+	vwmaccu.\v \d3, \b2, \a1 \mask
 	vwmaccu.\v \d4, \b2, \a2 \mask
+	
+	# b3 row
+	vwmaccu.\v \d0, \b53, \a2 \mask
+	vwmaccu.\v \d1, \b53, \a3 \mask
+	vwmaccu.\v \d2, \b53, \a4 \mask
+	vwmaccu.\v \d3, \b3, \a0 \mask
 	vwmaccu.\v \d4, \b3, \a1 \mask
+
+	# b4 row
+	vwmaccu.\v \d0, \b54, \a1 \mask
+	vwmaccu.\v \d1, \b54, \a2 \mask
+	vwmaccu.\v \d2, \b54, \a3 \mask
+	vwmaccu.\v \d3, \b54, \a4 \mask
 	vwmaccu.\v \d4, \b4, \a0 \mask
 
 	# Carry propagation

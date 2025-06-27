@@ -36,36 +36,45 @@ vsrl.vi v17, \a, 32-\r
 vor.vv \a, v16, v17
 .endm
 
-.macro quarterround name a b c d
-	# a += b; d ^= a; d <<<= 16;
-	vadd.vv \a, \a, \b
-	vxor.vv \d, \d, \a
-	vrotl_\name \d, 16
-	# c += d; b ^= c; b <<<= 12;
-	vadd.vv \c, \c, \d
-	vxor.vv \b, \b, \c
-	vrotl_\name \b, 12
-	# a += b; d ^= a; d <<<= 8;
-	vadd.vv \a, \a, \b
-	vxor.vv \d, \d, \a
-	vrotl_\name \d, 8
-	# c += d; b ^= c; b <<<= 7;
-	vadd.vv \c, \c, \d
-	vxor.vv \b, \b, \c
-	vrotl_\name \b, 7
+.macro batch_add x0 x1 x2 x3 y0 y1 y2 y3
+	vadd.vv \x0, \x0, \y0
+	vadd.vv \x1, \x1, \y1
+	vadd.vv \x2, \x2, \y2
+	vadd.vv \x3, \x3, \y3
 .endm
 
-.macro doubleround name
-	# Mix columns.
-	quarterround \name, v0, v4, v8, v12
-	quarterround \name, v1, v5, v9, v13
-	quarterround \name, v2, v6, v10, v14
-	quarterround \name, v3, v7, v11, v15
-	# Mix diagonals.
-	quarterround \name, v0, v5, v10, v15
-	quarterround \name, v1, v6, v11, v12
-	quarterround \name, v2, v7, v8, v13
-	quarterround \name, v3, v4, v9, v14
+.macro batch_xor x0 x1 x2 x3 y0 y1 y2 y3
+	vxor.vv \x0, \x0, \y0
+	vxor.vv \x1, \x1, \y1
+	vxor.vv \x2, \x2, \y2
+	vxor.vv \x3, \x3, \y3
+.endm
+
+.macro batch_rotl name x0 x1 x2 x3 n
+	vrotl_\name \x0 \n
+	vrotl_\name \x1 \n
+	vrotl_\name \x2 \n
+	vrotl_\name \x3 \n
+.endm
+
+# Do the 4 quarter rounds interleaved to allow more instruction level parallelism.
+.macro round name a0 a1 a2 a3 b0 b1 b2 b3 c0 c1 c2 c3 d0 d1 d2 d3
+	# a += b; d ^= a; d <<<= 16;
+	batch_add \a0, \a1, \a2, \a3, \b0, \b1, \b2, \b3
+	batch_xor \d0, \d1, \d2, \d3, \a0, \a1, \a2, \a3
+	batch_rotl \name, \d0, \d1, \d2, \d3, 16
+	# c += d; b ^= c; b <<<= 12;
+	batch_add \c0, \c1, \c2, \c3, \d0, \d1, \d2, \d3
+	batch_xor \b0, \b1, \b2, \b3, \c0, \c1, \c2, \c3
+	batch_rotl \name, \b0, \b1, \b2, \b3, 12
+	# a += b; d ^= a; d <<<= 8;
+	batch_add \a0, \a1, \a2, \a3, \b0, \b1, \b2, \b3
+	batch_xor \d0, \d1, \d2, \d3, \a0, \a1, \a2, \a3
+	batch_rotl \name, \d0, \d1, \d2, \d3, 8
+	# c += d; b ^= c; b <<<= 7;
+	batch_add \c0, \c1, \c2, \c3, \d0, \d1, \d2, \d3
+	batch_xor \b0, \b1, \b2, \b3, \c0, \c1, \c2, \c3
+	batch_rotl \name, \b0, \b1, \b2, \b3, 7
 .endm
 
 # Cell-based implementation strategy:
@@ -147,16 +156,15 @@ encrypt_blocks_\name:
 	vmv.v.x v15, s10
 
 	# Do 20 rounds of mixing.
-	doubleround \name
-	doubleround \name
-	doubleround \name
-	doubleround \name
-	doubleround \name
-	doubleround \name
-	doubleround \name
-	doubleround \name
-	doubleround \name
-	doubleround \name
+	li t0, 20
+round_loop_\name:
+	# Mix columns
+	round \name, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15
+	# Mix diagonals
+	round \name, v0, v1, v2, v3, v5, v6, v7, v4, v10, v11, v8, v9, v15, v12, v13, v14
+
+	addi t0, t0, -2
+	bnez t0, round_loop_\name
 
 	# Add in initial block values.
 	# 128 bit constant
