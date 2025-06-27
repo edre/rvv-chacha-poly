@@ -130,10 +130,23 @@ void test_chachas(FILE* f) {
   }
 }
 
-bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verbose) {
-  extern uint64_t vector_poly1305(const uint8_t* in, size_t len,
-				  const uint8_t key[32], uint8_t sig[16]);
+uint64_t vector_poly1305(const uint8_t* in, size_t len,
+		const uint8_t key[32], uint8_t sig[16]) {
+  extern void vector_poly1305_init(void *ctx, const unsigned char key[16]);
+  extern void vector_poly1305_blocks(void *ctx, const unsigned char *inp,
+		  size_t len, uint32_t padbit);
+  extern void vector_poly1305_emit(void *ctx, unsigned char mac[16],
+		  const uint8_t nonce[16]);
 
+  double state[24];  // openssl's scratch space
+  vector_poly1305_init(&state, key);
+  uint64_t precomputation_end = instruction_counter();
+  vector_poly1305_blocks(&state, in, len, 1);
+  vector_poly1305_emit(&state, sig, key+16);
+  return precomputation_end;
+}
+
+bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verbose) {
   poly1305_state state;
   uint8_t sig[16];
   uint64_t start = instruction_counter();

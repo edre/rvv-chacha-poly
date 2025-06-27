@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.global vector_poly1305
+.global vector_poly1305_init
+.global vector_poly1305_blocks
+.global vector_poly1305_emit
 # poly1305
 # Based on the obvious SIMD algorithm, described as Goll-Gueron here:
 # https://eprint.iacr.org/2019/842.pdf
@@ -39,9 +41,6 @@
 #   vector sum reduce polynomial vector into scalar
 #   add to s
 #   extract 16-byte hash
-
-# TODO: implement this with C intrinsics in rvv_vector.h, as register
-# allocation is actually annoying.
 
 # Generic 130-bit multiply/mod code
 # Reads 5-limbed inputs from a and b, writes result to a
@@ -203,16 +202,23 @@
 
 	.endm
 
+
 # Argument mappings
-# a0: const uint8_t* in
-# a1: size_t len
-# a2: const uint8_t[32] key
-# a3: uint8_t[16] sig
-# Register mappings (https://en.wikichip.org/wiki/risc-v/registers)
+# TODO: define macros to not have to remember these assignments
 # r^vlmax: s0, s1, s2, s3, s4
 # [r^vlmax, r^(vlmax-1), ... r^2, r]: v6, v7, v8, v9, v10
 # current accumulated vector state: v1, v2, v3, v4, v5
-vector_poly1305:
+
+# openssl gives 192 bytes of scratch space for assembly implementations,
+# not counting nonce or partial block buffer. This is exactly enough for:
+# state struct {
+#   uint64_t[2] previous accumulated state // offset 0
+#   uint64_t[2] r^vlmax // offset 16
+#   uint32_t[8][5] 8-element powers of r vector, in 5 limbs // offset 32
+# }
+
+# void poly1305_init(void *ctx, const unsigned char key[16])
+vector_poly1305_init:
 	# save registers
 	sd s0, -8(sp)
 	sd s1, -16(sp)
@@ -224,19 +230,44 @@ vector_poly1305:
 	sd s7, -64(sp)
 	sd s8, -72(sp)
 	sd s9, -80(sp)
-	sd s11, -88(sp)
 
-	# make sure input is a multiple of blocksize
-	andi t0, a1, 0xf
-	beq t0, zero, continue
-	li t0, 0x3713 # magic error number
-	sw t0, (a3)
-	j return
-continue:
+	ld t0, 0(a1)
+	ld t1, 8(a1)
+	sd t0, 0(a0)
+	sd t1, 8(a0)
+
+	# TODO: precomputation here, saving power of r vector state
+
+	# restore registers
+	ld s0, -8(sp)
+	ld s1, -16(sp)
+	ld s2, -24(sp)
+	ld s3, -32(sp)
+	ld s4, -40(sp)
+	ld s5, -48(sp)
+	ld s6, -56(sp)
+	ld s7, -64(sp)
+	ld s8, -72(sp)
+	ld s9, -80(sp)
+	ret
+
+# void poly1305_blocks(void *ctx, const unsigned char *inp, size_t len, u32 padbit)
+vector_poly1305_blocks:
+	# save registers
+	sd s0, -8(sp)
+	sd s1, -16(sp)
+	sd s2, -24(sp)
+	sd s3, -32(sp)
+	sd s4, -40(sp)
+	sd s5, -48(sp)
+	sd s6, -56(sp)
+	sd s7, -64(sp)
+	sd s8, -72(sp)
+	sd s9, -80(sp)
 
 	# load R and spread to 5 26-bit limbs: s0-4
-	ld t0, 0(a2)
-	ld t1, 8(a2)
+	ld t0, 0(a0)
+	ld t1, 8(a0)
 	li t5, 0x0ffffffc0fffffff
 	and t0, t0, t5
 	li t5, 0x0ffffffc0ffffffc
@@ -311,9 +342,12 @@ precomp:
 	slli a4, a4, 1 # double exponent
 	blt a4, a5, precomp
 
-	# store post-precomputation instruction counter
-	rdinstret s11
-
+	# set up state as initial leading zero step
+	vmv.v.i v1, 0
+	vmv.v.i v2, 0
+	vmv.v.i v3, 0
+	vmv.v.i v4, 0
+	vmv.v.i v5, 0
 
 	# From v11-14, separate out into 5 26-bit limbs: v20-v24
 	.macro vec_split5
@@ -334,15 +368,9 @@ precomp:
 	vsrl.vi v24, v14, 8
 	.endm
 
-	# set up state as initial leading zero step
-	vmv.v.i v1, 0
-	vmv.v.i v2, 0
-	vmv.v.i v3, 0
-	vmv.v.i v4, 0
-	vmv.v.i v5, 0
-	# a1: bytes left
+	# a2: bytes left
 	# a4: blocks left
-	srli a4, a1, 4
+	srli a4, a2, 4
 	# t1: blocks in initial step
 	# use a full vector here, if blocks are a multiple of vector size
 	addi a4, a4, -1
@@ -351,16 +379,15 @@ precomp:
 	addi t1, t1, 1
 
 	vsetvli t1, t1, e32, m1, ta, ma
-	vlseg4e32.v v11, (a0)
+	vlseg4e32.v v11, (a1)
 	# increment pointer
 	slli t0, t1, 4
-	add a0, a0, t0
-	sub a1, a1, t0
+	add a1, a1, t0
+	sub a2, a2, t0
 	vec_split5
 	# add leading bit
-	# TODO: don't run vector version if we can't even fill the first vector
-	li t0, 1<<24
-	vor.vx v24, v24, t0
+	slli a3, a3, 24
+	vor.vx v24, v24, a3
 
 	li t0, -1
 	vsetvli a5, t0, e32, m1, ta, ma
@@ -372,22 +399,19 @@ precomp:
 	vslideup.vx v4, v23, t0
 	vslideup.vx v5, v24, t0
 
-
 vector_loop:
-	beq a1, zero, end_vector_loop
+	beq a2, zero, end_vector_loop
 
 	# multiply by r^vlmax
 	vec_mul130 vx v1 v2 v3 v4 v5 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx
 
 	# load in new data: v11-v14
-	vlseg4e32.v v11, (a0)
-	add a0, a0, a5
-	sub a1, a1, a5
+	vlseg4e32.v v11, (a1)
+	add a1, a1, a5
+	sub a2, a2, a5
 	vec_split5
 	# add leading bit
-	# TODO: support final non-full block correctly
-	li t0, 1<<24
-	vor.vx v24, v24, t0
+	vor.vx v24, v24, a3
 
 	# add into state
 	vadd.vv v1, v1, v20
@@ -398,6 +422,34 @@ vector_loop:
 
 	j vector_loop
 end_vector_loop:
+
+	# restore registers
+	ld s0, -8(sp)
+	ld s1, -16(sp)
+	ld s2, -24(sp)
+	ld s3, -32(sp)
+	ld s4, -40(sp)
+	ld s5, -48(sp)
+	ld s6, -56(sp)
+	ld s7, -64(sp)
+	ld s8, -72(sp)
+	ld s9, -80(sp)
+	ret
+
+# void poly1305_emit(void *ctx, unsigned char mac[16],
+#                           const u32 nonce[4])
+vector_poly1305_emit:
+	# save registers
+	sd s0, -8(sp)
+	sd s1, -16(sp)
+	sd s2, -24(sp)
+	sd s3, -32(sp)
+	sd s4, -40(sp)
+	sd s5, -48(sp)
+	sd s6, -56(sp)
+	sd s7, -64(sp)
+	sd s8, -72(sp)
+	sd s9, -80(sp)
 
 	# multiply in [r^vlmax, r^(vlmax-1),... r^2, r]
 	vsll.vi v27, v7, 2
@@ -468,20 +520,19 @@ end_vector_loop:
 	or s2, s2, t0
 
 	# add in other half of key (after the carry it seems)
-	ld t0, 16(a2)
-	ld t1, 24(a2)
+	ld t0, 0(a2)
+	ld t1, 8(a2)
 	add s0, s0, t0
 	sltu t0, s0, t0
 	add s2, s2, t0
 	add s2, s2, t1
 
 	# write final signature
-	sd s0, 0(a3)
-	sd s2, 8(a3)
+	sd s0, 0(a1)
+	sd s2, 8(a1)
 
 return:
 	# restore registers
-	mv a0, s11
 	ld s0, -8(sp)
 	ld s1, -16(sp)
 	ld s2, -24(sp)
@@ -492,5 +543,4 @@ return:
 	ld s7, -64(sp)
 	ld s8, -72(sp)
 	ld s9, -80(sp)
-	ld s11, -88(sp)
 	ret
