@@ -135,7 +135,7 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
 				  const uint8_t key[32], uint8_t sig[16]);
 
   poly1305_state state;
-  uint8_t *sig = malloc(16); // gets corrupted if I define it on the stack?
+  uint8_t sig[16];
   uint64_t start = instruction_counter();
   boring_poly1305_init(&state, key);
   boring_poly1305_update(&state, data, len);
@@ -143,7 +143,7 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
   uint64_t end = instruction_counter();
   uint64_t boring_count = end - start;
 
-  uint8_t *sig2 = malloc(16);
+  uint8_t sig2[16];
   start = instruction_counter();
   uint64_t mid = vector_poly1305(data, len, key, sig2);
   end = instruction_counter();
@@ -160,14 +160,11 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
 	   mid - start, end - mid, (float)(end - mid)/len);
   }
 
-  free(sig);
-  free(sig2);
   return pass;
 }
 
 void test_polys(FILE* f) {
   const int big_len = 64*1024;
-  uint8_t *zero = malloc(2000);
   uint8_t *max_bits = malloc(big_len);
   memset(max_bits, 0xff, big_len);
   const uint8_t one[32] = {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
@@ -176,31 +173,27 @@ void test_polys(FILE* f) {
   const uint8_t data[272] = "Setec astronomy;too many secrets";
   bool pass = test_poly(max_bits, big_len, max_bits, true);
 
-  if (!pass)
-    goto end;
-
-  // random test
-  const int max_len = 1000;
-  uint8_t *rand = malloc(max_len);
-  for (int len = 16; len <= max_len; len += 16) {
-    fread((uint8_t*)key, 32, 1, f);
-    fread((uint8_t*)rand, len, 1, f);
-    if (!test_poly(data, len, key, false)) {
-      printf("failed random input len=%d\n", len);
-      pass = false;
-      break;
+  if (pass) {
+    // random test
+    const int max_len = 1000;
+    uint8_t rand[max_len];
+    for (int len = 16; len <= max_len; len += 16) {
+      fread((uint8_t*)key, 32, 1, f);
+      fread((uint8_t*)rand, len, 1, f);
+      if (!test_poly(data, len, key, false)) {
+        printf("failed random input len=%d\n", len);
+        pass = false;
+        break;
+      }
     }
   }
-  free(rand);
 
- end:
   if (pass) {
     printf("poly %s\n", pass_str);
   } else {
     printf("poly %s\n", fail_str);
   }
 
-  free(zero);
   free(max_bits);
 }
 
