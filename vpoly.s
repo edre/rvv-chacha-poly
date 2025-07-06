@@ -200,7 +200,33 @@
 	slli \a54, \a4, 2
 	add \a54, \a54, \a4
 
-	.endm
+.endm
+
+.macro scalar_extract_limbs i0 i1 r0 r1 r2 r3 r4 tmp
+	li \tmp, 0x3ffffff
+	and \r0, \i0, \tmp
+	srli \r1, \i0, 26
+	and \r1, \r1, \tmp
+	srli \r2, \i0, 52
+	slli \i0, \i1, 12
+	or \r2, \r2, \i0
+	and \r2, \r2, \tmp
+	srli \r3, \i1, 14
+	and \r3, \r3, \tmp
+	srli \r4, \i1, 40
+.endm
+
+.macro scalar_compress_limbs r0 r1 r2 r3 r4 tmp
+	slli \tmp, \r1, 26
+	or \r0, \r0, \tmp
+	slli \tmp, \r2, 52
+	or \r0, \r0, \tmp
+	srli \r1, \r2, 12
+	slli \tmp, \r3, 14
+	or \r1, \r1, \tmp
+	slli \tmp, \r4, 40
+	or \r1, \r1, \tmp
+.endm
 
 
 # Argument mappings
@@ -272,17 +298,7 @@ vector_poly1305_blocks:
 	and t0, t0, t5
 	li t5, 0x0ffffffc0ffffffc
 	and t1, t1, t5
-	li t5, 0x3ffffff
-	and s0, t0, t5
-	srli s1, t0, 26
-	and s1, s1, t5
-	srli s2, t0, 52
-	slli t0, t1, 12
-	or s2, s2, t0
-	and s2, s2, t5
-	srli s3, t1, 14
-	and s3, s3, t5
-	srli s4, t1, 40
+	scalar_extract_limbs t0 t1 s0 s1 s2 s3 s4 t5
 
 	# pre-multiplied-by-5 scalars
 	slli t4, s3, 2
@@ -479,16 +495,8 @@ end_vector_loop:
 	carry_scalar s3
 	carry_scalar s4
 
-	# collapse into contiguous 128 bits (s0,s1)
-	slli t0, s1, 26
-	or s0, s0, t0
-	slli t0, s2, 52
-	or s0, s0, t0
-	srli s1, s2, 12
-	slli t0, s3, 14
-	or s1, s1, t0
-	slli t0, s4, 40
-	or s1, s1, t0
+	# collapse into contiguous 128 bits
+	scalar_compress_limbs s0 s1 s2 s3 s4 t0
 
 	sd s0, 0(a0)
 	sd s1, 8(a0)
