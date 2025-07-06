@@ -423,33 +423,6 @@ vector_loop:
 	j vector_loop
 end_vector_loop:
 
-	# restore registers
-	ld s0, -8(sp)
-	ld s1, -16(sp)
-	ld s2, -24(sp)
-	ld s3, -32(sp)
-	ld s4, -40(sp)
-	ld s5, -48(sp)
-	ld s6, -56(sp)
-	ld s7, -64(sp)
-	ld s8, -72(sp)
-	ld s9, -80(sp)
-	ret
-
-# void poly1305_emit(void *ctx, unsigned char mac[16],
-#                           const u32 nonce[4])
-vector_poly1305_emit:
-	# save registers
-	sd s0, -8(sp)
-	sd s1, -16(sp)
-	sd s2, -24(sp)
-	sd s3, -32(sp)
-	sd s4, -40(sp)
-	sd s5, -48(sp)
-	sd s6, -56(sp)
-	sd s7, -64(sp)
-	sd s8, -72(sp)
-	sd s9, -80(sp)
 
 	# multiply in [r^vlmax, r^(vlmax-1),... r^2, r]
 	vsll.vi v27, v7, 2
@@ -505,33 +478,21 @@ vector_poly1305_emit:
 	carry_scalar s2
 	carry_scalar s3
 	carry_scalar s4
-	# any remaining stuff to carry has to be in the 2 bits we don't care about, right?
-	bne t0, zero, return
 
-	# collapse into contiguous 128 bits (s0,s2)
+	# collapse into contiguous 128 bits (s0,s1)
 	slli t0, s1, 26
 	or s0, s0, t0
 	slli t0, s2, 52
 	or s0, s0, t0
-	srli s2, s2, 12
+	srli s1, s2, 12
 	slli t0, s3, 14
-	or s2, s2, t0
+	or s1, s1, t0
 	slli t0, s4, 40
-	or s2, s2, t0
+	or s1, s1, t0
 
-	# add in other half of key (after the carry it seems)
-	ld t0, 0(a2)
-	ld t1, 8(a2)
-	add s0, s0, t0
-	sltu t0, s0, t0
-	add s2, s2, t0
-	add s2, s2, t1
+	sd s0, 0(a0)
+	sd s1, 8(a0)
 
-	# write final signature
-	sd s0, 0(a1)
-	sd s2, 8(a1)
-
-return:
 	# restore registers
 	ld s0, -8(sp)
 	ld s1, -16(sp)
@@ -543,4 +504,24 @@ return:
 	ld s7, -64(sp)
 	ld s8, -72(sp)
 	ld s9, -80(sp)
+	ret
+
+# void poly1305_emit(void *ctx, unsigned char mac[16],
+#                           const u32 nonce[4])
+vector_poly1305_emit:
+	# load final accumulation
+	ld t0, 0(a0)
+	ld t1, 8(a0)
+	# add in other half of key (after the carry)
+	ld t2, 0(a2)
+	ld t3, 8(a2)
+	add t0, t0, t2
+	sltu t2, t0, t2
+	add t1, t1, t2
+	add t1, t1, t3
+
+	# write final signature
+	sd t0, 0(a1)
+	sd t1, 8(a1)
+
 	ret
