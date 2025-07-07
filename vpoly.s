@@ -238,8 +238,8 @@
 # openssl gives 192 bytes of scratch space for assembly implementations,
 # not counting nonce or partial block buffer. This is exactly enough for:
 # state struct {
-#   uint64_t[2] previous accumulated state // offset 0
-#   uint64_t[2] r^vlmax // offset 16
+#   uint32_t[5] previous accumulated state // offset 0
+#   uint32_t[5] r^vlmax // offset 20
 #   uint32_t[8][5] 8-element powers of r vector, in 5 limbs // offset 32
 # }
 
@@ -257,43 +257,9 @@ vector_poly1305_init:
 	sd s8, -72(sp)
 	sd s9, -80(sp)
 
+	# load R and spread to 5 26-bit limbs: s0-4
 	ld t0, 0(a1)
 	ld t1, 8(a1)
-	sd t0, 0(a0)
-	sd t1, 8(a0)
-
-	# TODO: precomputation here, saving power of r vector state
-
-	# restore registers
-	ld s0, -8(sp)
-	ld s1, -16(sp)
-	ld s2, -24(sp)
-	ld s3, -32(sp)
-	ld s4, -40(sp)
-	ld s5, -48(sp)
-	ld s6, -56(sp)
-	ld s7, -64(sp)
-	ld s8, -72(sp)
-	ld s9, -80(sp)
-	ret
-
-# void poly1305_blocks(void *ctx, const unsigned char *inp, size_t len, u32 padbit)
-vector_poly1305_blocks:
-	# save registers
-	sd s0, -8(sp)
-	sd s1, -16(sp)
-	sd s2, -24(sp)
-	sd s3, -32(sp)
-	sd s4, -40(sp)
-	sd s5, -48(sp)
-	sd s6, -56(sp)
-	sd s7, -64(sp)
-	sd s8, -72(sp)
-	sd s9, -80(sp)
-
-	# load R and spread to 5 26-bit limbs: s0-4
-	ld t0, 0(a0)
-	ld t1, 8(a0)
 	li t5, 0x0ffffffc0fffffff
 	and t0, t0, t5
 	li t5, 0x0ffffffc0ffffffc
@@ -301,9 +267,13 @@ vector_poly1305_blocks:
 	scalar_extract_limbs t0 t1 s0 s1 s2 s3 s4 t5
 
 	# pre-multiplied-by-5 scalars
+	slli t2, s1, 2
+	slli t3, s2, 2
 	slli t4, s3, 2
-	add t4, t4, s3
 	slli t5, s4, 2
+	add t2, t2, s1
+	add t3, t3, s2
+	add t4, t4, s3
 	add t5, t5, s4
 
 	# a5 is vlmax-1 for e32m1
@@ -357,6 +327,71 @@ precomp:
 	# end of precomp loop:
 	slli a4, a4, 1 # double exponent
 	blt a4, a5, precomp
+
+	# store state
+	# zero initial accumulation
+	sd zero, 0(a0)
+	sd zero, 8(a0)
+	sw zero, 16(a0)
+	# r^vlmax
+	sw s0, 20(a0)
+	sw s1, 24(a0)
+	sw s2, 28(a0)
+	sw s3, 32(a0)
+	sw s4, 36(a0)
+	# power of r vector limbs
+	add a0, a0, 40
+	vsseg5e32.v v6, (a0)
+
+	# restore registers
+	ld s0, -8(sp)
+	ld s1, -16(sp)
+	ld s2, -24(sp)
+	ld s3, -32(sp)
+	ld s4, -40(sp)
+	ld s5, -48(sp)
+	ld s6, -56(sp)
+	ld s7, -64(sp)
+	ld s8, -72(sp)
+	ld s9, -80(sp)
+	ret
+
+# void poly1305_blocks(void *ctx, const unsigned char *inp, size_t len, u32 padbit)
+vector_poly1305_blocks:
+	# save registers
+	sd s0, -8(sp)
+	sd s1, -16(sp)
+	sd s2, -24(sp)
+	sd s3, -32(sp)
+	sd s4, -40(sp)
+	sd s5, -48(sp)
+	sd s6, -56(sp)
+	sd s7, -64(sp)
+	sd s8, -72(sp)
+	sd s9, -80(sp)
+
+	# load state
+	# r^vlmax
+	lw s0, 20(a0)
+	lw s1, 24(a0)
+	lw s2, 28(a0)
+	lw s3, 32(a0)
+	lw s4, 36(a0)
+	# pre-multiplied by 5 scalars
+	slli t2, s1, 2
+	slli t3, s2, 2
+	slli t4, s3, 2
+	slli t5, s4, 2
+	add t2, t2, s1
+	add t3, t3, s2
+	add t4, t4, s3
+	add t5, t5, s4
+	# load power of r vector limbs
+	li t0, -1
+	vsetvli a5, t0, e32, m1, tu, ma
+	add a5, a5, -1
+	add t0, a0, 40
+	vlseg5e32.v v6, (t0)
 
 	# set up state as initial leading zero step
 	vmv.v.i v1, 0
