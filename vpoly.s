@@ -251,8 +251,7 @@ vector_poly1305_init:
 	add t5, t5, s4
 
 	# a5 is vlmax-1 for e32m1
-	li t0, -1
-	vsetvli a5, t0, e32, m1, ta, mu
+	vsetivli a5, 8, e32, m1, ta, mu
 	addi a5, a5, -1 # vlmax-1
 	# splat r^1 to whole vector
 	vmv.v.x v6, s0
@@ -367,22 +366,39 @@ vector_poly1305_blocks:
 	add t3, t3, s2
 	add t4, t4, s3
 	add t5, t5, s4
-	# load power of r vector limbs
-	li t0, -1
-	vsetvli a5, t0, e32, m1, tu, ma
-	add a5, a5, -1
-	add t0, a0, 20
-	vlseg5e32.v v6, (t0)
+	# shift pad bit into position
+	slli a3, a3, 24
 
-	# set up state as initial leading zero step
+	# set up state as initial zero step
+	vsetivli a5, 8, e32, m1, ta, ma
+	add a5, a5, -1
 	vmv.v.i v1, 0
 	vmv.v.i v2, 0
 	vmv.v.i v3, 0
 	vmv.v.i v4, 0
 	vmv.v.i v5, 0
+	# add scalar accumulation to first vector element
+	vsetivli zero, 1, e32, m1, tu, ma
+	vlseg5e32.v v1, (a0)
 
+	# a2: initial bytes left
+	# a4: blocks left
+	# a5: max_blocks - 1
+	# a6: current blocks vl
+	# a7: end of input pointer
+	add a7, a1, a2
+	srli a4, a2, 4
+	vsetvli a6, a4, e32, m1, tu, ma
+
+vector_loop:
+
+	# load in new data: v11-v14
+	vlseg4e32.v v11, (a1)
+	# adjust pointers/counters
+	slli t0, a6, 4
+	add a1, a1, t0
+	sub a4, a4, a6
 	# From v11-14, separate out into 5 26-bit limbs: v20-v24
-	.macro vec_split5
 	li t0, 0x3ffffff
 	vand.vx v20, v11, t0
 	vsrl.vi v11, v11, 26
@@ -398,50 +414,7 @@ vector_poly1305_blocks:
 	vor.vv v13, v13, v31
 	vand.vx v23, v13, t0
 	vsrl.vi v24, v14, 8
-	.endm
 
-	# a2: bytes left
-	# a4: blocks left
-	srli a4, a2, 4
-	# t1: blocks in initial step
-	# use a full vector here, if blocks are a multiple of vector size
-	addi a4, a4, -1
-	and t1, a4, a5
-	addi a4, a4, 1
-	addi t1, t1, 1
-
-	vsetvli t1, t1, e32, m1, ta, ma
-	vlseg4e32.v v11, (a1)
-	# increment pointer
-	slli t0, t1, 4
-	add a1, a1, t0
-	sub a2, a2, t0
-	vec_split5
-	# add leading bit
-	slli a3, a3, 24
-	vor.vx v24, v24, a3
-
-	li t0, -1
-	vsetvli a5, t0, e32, m1, ta, ma
-	sub t0, a5, t1
-	slli a5, a5, 4 # block size in bytes
-	vslideup.vx v1, v20, t0
-	vslideup.vx v2, v21, t0
-	vslideup.vx v3, v22, t0
-	vslideup.vx v4, v23, t0
-	vslideup.vx v5, v24, t0
-
-vector_loop:
-	beq a2, zero, end_vector_loop
-
-	# multiply by r^vlmax
-	vec_mul130 vx v1 v2 v3 v4 v5 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx
-
-	# load in new data: v11-v14
-	vlseg4e32.v v11, (a1)
-	add a1, a1, a5
-	sub a2, a2, a5
-	vec_split5
 	# add leading bit
 	vor.vx v24, v24, a3
 
@@ -452,11 +425,43 @@ vector_loop:
 	vadd.vv v4, v4, v23
 	vadd.vv v5, v5, v24
 
+	bge a1, a7, rotate_powers
+	vsetvli a6, a4, e32, m1, tu, ma
+
+	## multiply by r^vlmax
+	vec_mul130 vx v1 v2 v3 v4 v5 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx
 	j vector_loop
-end_vector_loop:
 
+rotate_powers:
+	# TODO: if the last block is full, branch to tail_rotate_powers
+	#bgt a6, a5, tail_rotate_powers
+	# TODO: if we never had a full block, branch to tail_rotate_powers
 
-	# multiply in [r^vlmax, r^(vlmax-1),... r^2, r]
+	# TODO: read rotated in place with two vlseg5 instead of vslides
+	# load power of r vector limbs
+	vsetivli t1, 8, e32, m1, tu, ma
+	add t0, a0, 20
+	vlseg5e32.v v16, (t0)
+	# first slide up the high powers
+	sub t0, t1, a6
+	vslideup.vx v6, v16, a6
+	vslideup.vx v7, v17, a6
+	vslideup.vx v8, v18, a6
+	vslideup.vx v9, v19, a6
+	vslideup.vx v10, v20, a6
+tail_rotate_powers:
+	# then load the lower powers into the empty space
+	li t1, 20
+	mul t0, t0, t1
+	add t0, t0, 20
+	add t0, a0, t0
+	vsetvli zero, a6, e32, m1, tu, ma
+	vlseg5e32.v v6, (t0)
+
+mul_powers_of_r:
+	# TODO: always use low VL for short inputs
+	vsetivli zero, 8, e32, m1, ta, ma
+	# multiply in powers of r vector
 	vsll.vi v27, v7, 2
 	vadd.vv v27, v27, v7
 	vsll.vi v28, v8, 2
@@ -473,14 +478,12 @@ end_vector_loop:
 	vmv.v.i v8, 0
 	vmv.v.i v9, 0
 	vmv.v.i v10, 0
-	vwredsum.vs v6, v1, v6
-	vwredsum.vs v7, v2, v7
-	vwredsum.vs v8, v3, v8
-	vwredsum.vs v9, v4, v9
-	vwredsum.vs v10, v5, v10
+	vredsum.vs v6, v1, v6
+	vredsum.vs v7, v2, v7
+	vredsum.vs v8, v3, v8
+	vredsum.vs v9, v4, v9
+	vredsum.vs v10, v5, v10
 	# extract to scalars
-	li t0, 1
-	vsetvli zero, t0, e64, m1, ta, ma
 	vmv.x.s s0, v6
 	vmv.x.s s1, v7
 	vmv.x.s s2, v8
