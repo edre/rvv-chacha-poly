@@ -120,10 +120,10 @@
 	vand.vx \a0, \a0, t0 \mask
 	vadd.vv \a1, \a1, \carry \mask
 
-	.endm
+.endm
 
 # Scalar 130-bit a0-4 = a0-4 * a0-4
-.macro scalar_mul130 x a0 a1 a2 a3 a4 a51 a52 a53 a54 d0 d1 d2 d3 d4 carry tmp
+.macro scalar_mul130 a0 a1 a2 a3 a4 a53 a54 d0 d1 d2 d3 d4 carry tmp
 	# d0 column
 	mul \d0, \a1, \a54
 	mul \tmp, \a2, \a53
@@ -167,18 +167,18 @@
 	# Carry propagation
 	# logic copied from https://github.com/floodyberry/poly1305-donna
 	li \tmp, 0x3ffffff
-	.macro carry_prop_scalar\x a d
+	.macro carry_prop_scalar a d
 	add \d, \d, \carry
 	srli \carry, \d, 26
 	and \a, \d, \tmp
 	.endm
 
 	li \carry, 0
-	carry_prop_scalar\x \a0, \d0
-	carry_prop_scalar\x \a1, \d1
-	carry_prop_scalar\x \a2, \d2
-	carry_prop_scalar\x \a3, \d3
-	carry_prop_scalar\x \a4, \d4
+	carry_prop_scalar \a0, \d0
+	carry_prop_scalar \a1, \d1
+	carry_prop_scalar \a2, \d2
+	carry_prop_scalar \a3, \d3
+	carry_prop_scalar \a4, \d4
 
 	# wraparound carry continue
 	slli \tmp, \carry, 2
@@ -190,17 +190,7 @@
 	and \a0, \a0, \tmp
 	add \a1, \a1, \carry
 
-	# Store a*5 registers for next time
-	slli \a51, \a1, 2
-	add \a51, \a51, \a1
-	slli \a52, \a2, 2
-	add \a52, \a52, \a2
-	slli \a53, \a3, 2
-	add \a53, \a53, \a3
-	slli \a54, \a4, 2
-	add \a54, \a54, \a4
-
-	.endm
+.endm
 
 
 # Argument mappings
@@ -264,7 +254,7 @@ vector_poly1305_init:
 	li t0, -1
 	vsetvli a5, t0, e32, m1, ta, mu
 	addi a5, a5, -1 # vlmax-1
-	# initialize vector to r^1
+	# splat r^1 to whole vector
 	vmv.v.x v6, s0
 	vmv.v.x v7, s1
 	vmv.v.x v8, s2
@@ -282,7 +272,7 @@ vector_poly1305_init:
 	slli a4, a4, 1
 
 	# scalar-scalar 130bit mul: s0-4 = s0-4 * s0-4
-	scalar_mul130 1 s0 s1 s2 s3 s4 t2 t3 t4 t5 s5 s6 s7 s8 s9 t0 t1
+	scalar_mul130 s0 s1 s2 s3 s4 t4 t5 s5 s6 s7 s8 s9 t0 t1
 
 	vmv.v.i v11, 0 # no vmv with mask, so vor with 0
 	vor.vx v6, v11, s0, v0.t
@@ -302,11 +292,24 @@ precomp:
 	vand.vx v1, v1, a4
 	vmseq.vx v0, v1, a4
 
+	# pre-multiplied-by-5 scalars
+	slli t2, s1, 2
+	slli t3, s2, 2
+	slli t4, s3, 2
+	slli t5, s4, 2
+	add t2, t2, s1
+	add t3, t3, s2
+	add t4, t4, s3
+	add t5, t5, s4
 	# vector-scalar masked 130bit mul: v6-10 = v6-10 * s0-4
 	vec_mul130 vxm v6 v7 v8 v9 v10 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx ",v0.t"
 
-	# scalar-scalar 130bit mul: s0-4 = s0-4 * s0-4
-	scalar_mul130 2 s0 s1 s2 s3 s4 t2 t3 t4 t5 s5 s6 s7 s8 s9 t0 t1
+	# extract new highest power from first element
+	vmv.x.s s0, v6
+	vmv.x.s s1, v7
+	vmv.x.s s2, v8
+	vmv.x.s s3, v9
+	vmv.x.s s4, v10
 
 	# end of precomp loop:
 	slli a4, a4, 1 # double exponent
