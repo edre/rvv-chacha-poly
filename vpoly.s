@@ -333,14 +333,8 @@ precomp:
 	sd zero, 0(a0)
 	sd zero, 8(a0)
 	sw zero, 16(a0)
-	# r^vlmax
-	sw s0, 20(a0)
-	sw s1, 24(a0)
-	sw s2, 28(a0)
-	sw s3, 32(a0)
-	sw s4, 36(a0)
 	# power of r vector limbs
-	add a0, a0, 40
+	add a0, a0, 20
 	vsseg5e32.v v6, (a0)
 
 	# restore registers
@@ -390,7 +384,7 @@ vector_poly1305_blocks:
 	li t0, -1
 	vsetvli a5, t0, e32, m1, tu, ma
 	add a5, a5, -1
-	add t0, a0, 40
+	add t0, a0, 20
 	vlseg5e32.v v6, (t0)
 
 	# set up state as initial leading zero step

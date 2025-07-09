@@ -138,7 +138,7 @@ uint64_t vector_poly1305(const uint8_t* in, size_t len,
   extern void vector_poly1305_emit(void *ctx, unsigned char mac[16],
 		  const uint8_t nonce[16]);
 
-  double state[25];  // openssl's scratch space plus just one double
+  double state[24];  // openssl's scratch space
   vector_poly1305_init(&state, key);
   uint64_t precomputation_end = instruction_counter();
   vector_poly1305_blocks(&state, in, len, 1);
