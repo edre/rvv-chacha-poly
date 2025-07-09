@@ -19,4 +19,4 @@
 # I got qemu from my package manager.
 
 riscv64-unknown-elf-gcc -march=rv64gcv_zvkb main.c boring.c vchacha.s vpoly.s -o main -O -static &&
-    qemu-riscv64 -cpu rv64,v=true,vlen=256,zvkb=true main
+    qemu-riscv64 -cpu rv64,v=true,vlen=256,zvkb=true,rvv_ta_all_1s=on,rvv_ma_all_1s=on main
