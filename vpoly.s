@@ -349,6 +349,8 @@ vector_poly1305_blocks:
 	sd s7, -64(sp)
 	sd s8, -72(sp)
 	sd s9, -80(sp)
+	
+	beqz a2, blocks_return
 
 	# load state
 	# r^vlmax
@@ -425,10 +427,11 @@ vector_loop:
 	vadd.vv v4, v4, v23
 	vadd.vv v5, v5, v24
 
+	# End final loop before batch multiply.
 	bge a1, a7, rotate_powers
-	vsetvli a6, a4, e32, m1, tu, ma
 
 	## multiply by r^vlmax
+	vsetvli a6, a4, e32, m1, tu, ma
 	vec_mul130 vx v1 v2 v3 v4 v5 s0 s1 s2 s3 s4 t2 t3 t4 t5 v12 v14 v16 v18 v20 v11 v22 vx
 	j vector_loop
 
@@ -514,20 +517,13 @@ mul_powers_of_r:
 	carry_scalar s3
 	carry_scalar s4
 
-	# collapse into contiguous 128 bits (s0,s1)
-	slli t0, s1, 26
-	or s0, s0, t0
-	slli t0, s2, 52
-	or s0, s0, t0
-	srli s1, s2, 12
-	slli t0, s3, 14
-	or s1, s1, t0
-	slli t0, s4, 40
-	or s1, s1, t0
+	sw s0, 0(a0)
+	sw s1, 4(a0)
+	sw s2, 8(a0)
+	sw s3, 12(a0)
+	sw s4, 16(a0)
 
-	sd s0, 0(a0)
-	sd s1, 8(a0)
-
+blocks_return:
 	# restore registers
 	ld s0, -8(sp)
 	ld s1, -16(sp)
@@ -545,8 +541,21 @@ mul_powers_of_r:
 #                           const u32 nonce[4])
 vector_poly1305_emit:
 	# load final accumulation
-	ld t0, 0(a0)
-	ld t1, 8(a0)
+	lw t0, 0(a0)
+	lw t1, 4(a0)
+	lw t2, 8(a0)
+	lw t3, 12(a0)
+	lw t4, 16(a0)
+	# collapse into contiguous 128 bits (t0,t1)
+	slli t5, t1, 26
+	or t0, t0, t5
+	slli t5, t2, 52
+	or t0, t0, t5
+	srli t1, t2, 12
+	slli t5, t3, 14
+	or t1, t1, t5
+	slli t5, t4, 40
+	or t1, t1, t5
 	# add in other half of key (after the carry)
 	ld t2, 0(a2)
 	ld t3, 8(a2)

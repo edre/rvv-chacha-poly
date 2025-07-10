@@ -141,7 +141,16 @@ uint64_t vector_poly1305(const uint8_t* in, size_t len,
   double state[24];  // openssl's scratch space
   vector_poly1305_init(&state, key);
   uint64_t precomputation_end = instruction_counter();
-  vector_poly1305_blocks(&state, in, len, 1);
+  size_t block_len = len &~ 15;
+  vector_poly1305_blocks(&state, in, block_len, 1);
+  if (len > block_len) {
+    size_t tail_len = len & 15;
+    char buffer[16];
+    memset(buffer, 0, 16);
+    memcpy(buffer, in+block_len, tail_len);
+    buffer[tail_len] = 1;
+    vector_poly1305_blocks(&state, buffer, 16, 0);
+  }
   vector_poly1305_emit(&state, sig, key+16);
   return precomputation_end;
 }
@@ -190,7 +199,7 @@ void test_polys(FILE* f) {
     // random test
     const int max_len = 1000;
     uint8_t rand[max_len];
-    for (int len = 16; len <= max_len; len += 16) {
+    for (int len = 11; len <= max_len; len += 17) {
       fread((uint8_t*)key, 32, 1, f);
       fread((uint8_t*)rand, len, 1, f);
       if (!test_poly(data, len, key, false)) {
