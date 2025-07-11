@@ -130,26 +130,29 @@ void test_chachas(FILE* f) {
   }
 }
 
-uint64_t vector_poly1305(const uint8_t* in, size_t len,
-		const uint8_t key[32], uint8_t sig[16]) {
-  extern void vector_poly1305_init(void *ctx, const unsigned char key[16]);
-  extern void vector_poly1305_blocks(void *ctx, const unsigned char *inp,
+extern void vector_poly1305_init(void *ctx, const unsigned char key[16]);
+extern void vector_poly1305_blocks(void *ctx, const unsigned char *inp,
 		  size_t len, uint32_t padbit);
-  extern void vector_poly1305_emit(void *ctx, unsigned char mac[16],
+extern void vector_poly1305_single_blocks(void *ctx, const unsigned char *inp,
+		  size_t len, uint32_t padbit);
+extern void vector_poly1305_emit(void *ctx, unsigned char mac[16],
 		  const uint8_t nonce[16]);
 
+uint64_t vector_poly1305(const uint8_t* in, size_t len,
+		const uint8_t key[32], uint8_t sig[16],
+		void (*blocks)(void *ctx, const unsigned char *inp, size_t len, uint32_t padbit)) {
   double state[24];  // openssl's scratch space
   vector_poly1305_init(&state, key);
   uint64_t precomputation_end = instruction_counter();
   size_t block_len = len &~ 15;
-  vector_poly1305_blocks(&state, in, block_len, 1);
+  blocks(&state, in, block_len, 1);
   if (len > block_len) {
     size_t tail_len = len & 15;
     char buffer[16];
     memset(buffer, 0, 16);
     memcpy(buffer, in+block_len, tail_len);
     buffer[tail_len] = 1;
-    vector_poly1305_blocks(&state, buffer, 16, 0);
+    blocks(&state, buffer, 16, 0);
   }
   vector_poly1305_emit(&state, sig, key+16);
   return precomputation_end;
@@ -167,10 +170,18 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
 
   uint8_t sig2[16];
   start = instruction_counter();
-  uint64_t mid = vector_poly1305(data, len, key, sig2);
+  uint64_t mid = vector_poly1305(data, len, key, sig2, vector_poly1305_blocks);
   end = instruction_counter();
+  uint64_t multi_count = end - mid;
+  uint64_t multi_init = mid - start;
 
-  bool pass = memcmp(sig, sig2, 16) == 0;
+  uint8_t sig3[16];
+  start = instruction_counter();
+  mid = vector_poly1305(data, len, key, sig3, vector_poly1305_single_blocks);
+  end = instruction_counter();
+  uint64_t single_count = end - mid;
+
+  bool pass = memcmp(sig, sig2, 16) == 0 && memcmp(sig, sig3, 16) == 0;
 
   if (verbose || !pass) {
     printf("boring mac: ");
@@ -179,7 +190,11 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
     printf("vector mac: ");
     println_hex(sig2, 16);
     printf("precomputation=%ld, processing=%ld, inst/byte=%.02f\n",
-	   mid - start, end - mid, (float)(end - mid)/len);
+	   multi_init, multi_count, (float)(multi_count)/len);
+    printf("block1 mac: ");
+    println_hex(sig3, 16);
+    printf("processing=%ld, inst/byte=%.02f\n",
+	   single_count, (float)(single_count)/len);
   }
 
   return pass;
@@ -193,6 +208,7 @@ void test_polys(FILE* f) {
   const uint8_t key[32] = {1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121, 144, 169, 196, 225, 255,
   			   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
   const uint8_t data[272] = "Setec astronomy;too many secrets";
+  // Test with all bits set in inputs to trigger as many carries as possible.
   bool pass = test_poly(max_bits, big_len, max_bits, true);
 
   if (pass) {

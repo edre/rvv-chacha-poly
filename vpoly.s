@@ -14,6 +14,7 @@
 
 .global vector_poly1305_init
 .global vector_poly1305_blocks
+.global vector_poly1305_single_blocks
 .global vector_poly1305_emit
 # poly1305
 # Based on the obvious SIMD algorithm, described as Goll-Gueron here:
@@ -192,6 +193,20 @@
 
 .endm
 
+.macro scalar_extract_limbs i0 i1 r0 r1 r2 r3 r4 tmp
+	li \tmp, 0x3ffffff
+	and \r0, \i0, \tmp
+	srli \r1, \i0, 26
+	and \r1, \r1, \tmp
+	srli \r2, \i0, 52
+	slli \i0, \i1, 12
+	or \r2, \r2, \i0
+	and \r2, \r2, \tmp
+	srli \r3, \i1, 14
+	and \r3, \r3, \tmp
+	srli \r4, \i1, 40
+.endm
+
 
 # Argument mappings
 # TODO: define macros to not have to remember these assignments
@@ -228,17 +243,7 @@ vector_poly1305_init:
 	and t0, t0, t5
 	li t5, 0x0ffffffc0ffffffc
 	and t1, t1, t5
-	li t5, 0x3ffffff
-	and s0, t0, t5
-	srli s1, t0, 26
-	and s1, s1, t5
-	srli s2, t0, 52
-	slli t0, t1, 12
-	or s2, s2, t0
-	and s2, s2, t5
-	srli s3, t1, 14
-	and s3, s3, t5
-	srli s4, t1, 40
+	scalar_extract_limbs t0 t1 s0 s1 s2 s3 s4 t5
 
 	# pre-multiplied-by-5 scalars
 	slli t2, s1, 2
@@ -475,7 +480,7 @@ mul_powers_of_r:
 	vadd.vv v30, v30, v10
 	vec_mul130 vv v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v27 v28 v29 v30 v12 v14 v16 v18 v20 v11 v22 vv
 
-	# vector reduction, into widened sum in case vector is huge
+	# vector reduction
 	vmv.v.i v6, 0
 	vmv.v.i v7, 0
 	vmv.v.i v8, 0
@@ -525,6 +530,139 @@ mul_powers_of_r:
 
 blocks_return:
 	# restore registers
+	ld s0, -8(sp)
+	ld s1, -16(sp)
+	ld s2, -24(sp)
+	ld s3, -32(sp)
+	ld s4, -40(sp)
+	ld s5, -48(sp)
+	ld s6, -56(sp)
+	ld s7, -64(sp)
+	ld s8, -72(sp)
+	ld s9, -80(sp)
+	ret
+
+# same signature as the other blocks function, but computes one block at a time to optimize for smaller inputs
+# void poly1305_blocks(void *ctx, const unsigned char *inp, size_t len, u32 padbit)
+vector_poly1305_single_blocks:
+	# save registers
+	sd s0, -8(sp)
+	sd s1, -16(sp)
+	sd s2, -24(sp)
+	sd s3, -32(sp)
+	sd s4, -40(sp)
+	sd s5, -48(sp)
+	sd s6, -56(sp)
+	sd s7, -64(sp)
+	sd s8, -72(sp)
+	sd s9, -80(sp)
+	# leave 40 bytes of stack space
+	add sp, sp, -128
+
+	# find r^1 in saved powers of r tail
+	vsetivli t0, 8, e32, m1, ta, ma
+	li t1, 20
+	mul t0, t0, t1
+	add t0, a0, t0
+	# our VL for the rest of the function:
+	# 5 32-bit limbs, with LMUL=2 so that even the
+	# smallest 128-bit vector unit can use the same code 
+	vsetivli zero, 5, e32, m2, ta, ma
+	vle32.v v2, (t0)
+	# precompute r*5
+	lw s5, 4(t0)
+	lw s6, 8(t0)
+	lw s7, 12(t0)
+	lw s8, 16(t0)
+	slli t2, s5, 2
+	slli t3, s6, 2
+	slli t4, s7, 2
+	slli t5, s8, 2
+	add s5, s5, t2
+	add s6, s6, t3
+	add s7, s7, t4
+	add s8, s8, t5
+	# precompute offset multipliers, preshifted
+	vslide1up.vx v4, v2, s8
+	vslide1up.vx v6, v4, s7
+	vslide1up.vx v8, v6, s6
+	vslide1up.vx v10, v8, s5
+
+	# load accumulator into s0-s4
+	lw s0, 0(a0)
+	lw s1, 4(a0)
+	lw s2, 8(a0)
+	lw s3, 12(a0)
+	lw s4, 16(a0)
+	# shift pad bit into position
+	slli a3, a3, 24
+
+	# loop target
+	add a7, a1, a2
+	j end_single_block_loop
+
+single_block_loop:
+	# Load block and split into 5 limbs (s5-9)
+	ld t0, 0(a1)
+	ld t1, 8(a1)
+	add a1, a1, 16
+	scalar_extract_limbs t0 t1 s5 s6 s7 s8 s9 t2
+	# pad bit
+	or s9, s9, a3
+	# Add into accumulator
+	add s0, s0, s5
+	add s1, s1, s6
+	add s2, s2, s7
+	add s3, s3, s8
+	add s4, s4, s9
+
+	# vector multiply into widened destination (v16)
+	vwmulu.vx v16, v2, s0
+	vwmaccu.vx v16, s1, v4
+	vwmaccu.vx v16, s2, v6
+	vwmaccu.vx v16, s3, v8
+	vwmaccu.vx v16, s4, v10
+
+	# extract to 64-bit scalars, via the stack
+	vsetivli zero, 5, e64, m4, ta, ma
+	vse64.v v16, (sp)
+	vsetivli zero, 5, e32, m2, ta, ma
+	ld s0, 0(sp)
+	ld s1, 8(sp)
+	ld s2, 16(sp)
+	ld s3, 24(sp)
+	ld s4, 32(sp)
+	# carry through
+	# t0=carry t1=mask
+	li t0, 0
+	li t1, 0x3ffffff
+	carry_scalar s0
+	carry_scalar s1
+	carry_scalar s2
+	carry_scalar s3
+	carry_scalar s4
+	# carry *= 5
+	slli t2, t0, 2
+	add t0, t0, t2
+	carry_scalar s0
+	carry_scalar s1
+	carry_scalar s2
+	carry_scalar s3
+	carry_scalar s4
+
+end_single_block_loop:
+	blt a1, a7, single_block_loop
+
+	# save new accumulator
+	sw s0, 0(a0)
+	sw s1, 4(a0)
+	sw s2, 8(a0)
+	sw s3, 12(a0)
+	sw s4, 16(a0)
+
+return:
+	# restore registers
+	add sp, sp, 128
 	ld s0, -8(sp)
 	ld s1, -16(sp)
 	ld s2, -24(sp)
