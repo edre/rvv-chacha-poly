@@ -96,7 +96,7 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
   return pass;
 }
 
-void test_chachas(FILE* f) {
+bool test_chachas(FILE* f) {
   int len = 64*1024 - 11;
   uint8_t* data = malloc(len);
   uint32_t rand = 1;
@@ -128,6 +128,7 @@ void test_chachas(FILE* f) {
   } else {
     printf("chacha %s\n", fail_str);
   }
+  return pass;
 }
 
 extern void vector_poly1305_init(void *ctx, const unsigned char key[16]);
@@ -200,7 +201,7 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
   return pass;
 }
 
-void test_polys(FILE* f) {
+bool test_polys(FILE* f) {
   const int big_len = 64*1024;
   uint8_t *max_bits = malloc(big_len);
   memset(max_bits, 0xff, big_len);
@@ -233,14 +234,16 @@ void test_polys(FILE* f) {
   }
 
   free(max_bits);
+  return pass;
 }
 
 int main(int argc, uint8_t *argv[]) {
   extern uint32_t vlmax_u32();
   printf("VLMAX in blocks: %d\n", vlmax_u32());
   FILE* rand = fopen("/dev/urandom", "r");
-  test_chachas(rand);
+  bool pass = test_chachas(rand);
   printf("\n");
-  test_polys(rand);
+  pass |= test_polys(rand);
   fclose(rand);
+  return pass ? 0 : 1;
 }
