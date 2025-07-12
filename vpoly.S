@@ -504,14 +504,14 @@ vector_loop:
 	j vector_loop
 
 rotate_powers:
+	add t2, CONTEXT, 20
 	# If the final block is full or we never had a full block, skip loading the top elements.
 	beq VL, MAX_VL, tail_rotate_powers
 	blt INITIAL_VL, MAX_VL, tail_rotate_powers
 
 	# load power of r vector limbs
 	vsetivli zero, 8, e32, m1, tu, ma
-	add t0, CONTEXT, 20
-	vlseg5e32.v VLOAD0, (t0)
+	vlseg5e32.v VLOAD0, (t2)
 	# first slide up the high powers
 	vslideup.vx VPOWER0, VLOAD0, VL
 	vslideup.vx VPOWER1, VLOAD1, VL
@@ -522,12 +522,11 @@ tail_rotate_powers:
 	# then load the lower powers into the empty space
 	sub t0, MAX_VL, VL
 	slli t1, t0, 2
-	add t1, t1, t0
-	slli t0, t1, 2
-	add t0, t0, 20
-	add t0, CONTEXT, t0
+	add t0, t0, t1
+	slli t0, t0, 2
+	add t2, t2, t0
 	vsetvli zero, VL, e32, m1, tu, ma
-	vlseg5e32.v VPOWER0, (t0)
+	vlseg5e32.v VPOWER0, (t2)
 
 mul_powers_of_r:
 	vsetvli zero, INITIAL_VL, e32, m1, ta, ma
@@ -622,8 +621,9 @@ vector_poly1305_single_blocks:
 	li LIMB_MASK, 0x3ffffff
 	# find r^1 in saved powers of r tail
 	vsetivli t0, 8, e32, m1, ta, ma
-	li t1, 20
-	mul t0, t0, t1
+	slli t1, t0, 2
+	add t0, t0, t1
+	slli t0, t0, 2
 	add t0, CONTEXT, t0
 	# our VL for the rest of the function:
 	# 5 32-bit limbs, with LMUL=2 so that even the
