@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "boring.h"
 
 void println_hex(uint8_t* data, int size) {
@@ -32,6 +33,7 @@ void println_hex(uint8_t* data, int size) {
 // test non-block sized lengths
 
 extern uint64_t instruction_counter();
+extern uint32_t vlmax_u32();
 
 const char* pass_str = "\x1b[32mPASS\x1b[0m";
 const char* fail_str = "\x1b[31mFAIL\x1b[0m";
@@ -96,7 +98,7 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
   return pass;
 }
 
-bool test_chachas(FILE* f) {
+bool test_chachas(FILE* f, bool verbose) {
   int len = 64*1024 - 11;
   uint8_t* data = malloc(len);
   uint32_t rand = 1;
@@ -109,7 +111,7 @@ bool test_chachas(FILE* f) {
   uint8_t nonce[12] = "BurnAfterUse";
   int counter = 0;
 
-  bool pass = test_chacha(data, len, key, nonce, true);
+  bool pass = test_chacha(data, len, key, nonce, verbose);
 
   if (pass) {
     for (int i = 1, len = 1; len < 1000; len += i++) {
@@ -124,9 +126,9 @@ bool test_chachas(FILE* f) {
   }
 
   if (pass) {
-    printf("chacha %s\n", pass_str);
+    printf("VLEN=%d chacha %s\n", vlmax_u32()*32, pass_str);
   } else {
-    printf("chacha %s\n", fail_str);
+    printf("VLEN=%d chacha %s\n", vlmax_u32()*32, fail_str);
   }
   return pass;
 }
@@ -201,7 +203,7 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
   return pass;
 }
 
-bool test_polys(FILE* f) {
+bool test_polys(FILE* f, bool verbose) {
   const int big_len = 64*1024;
   uint8_t *max_bits = malloc(big_len);
   memset(max_bits, 0xff, big_len);
@@ -210,7 +212,7 @@ bool test_polys(FILE* f) {
   			   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
   const uint8_t data[272] = "Setec astronomy;too many secrets";
   // Test with all bits set in inputs to trigger as many carries as possible.
-  bool pass = test_poly(max_bits, big_len, max_bits, true);
+  bool pass = test_poly(max_bits, big_len, max_bits, verbose);
 
   if (pass) {
     // random test
@@ -228,22 +230,26 @@ bool test_polys(FILE* f) {
   }
 
   if (pass) {
-    printf("poly %s\n", pass_str);
+    printf("VLEN=%d poly   %s\n", vlmax_u32()*32, pass_str);
   } else {
-    printf("poly %s\n", fail_str);
+    printf("VLEN=%d poly   %s\n", vlmax_u32()*32, fail_str);
   }
 
   free(max_bits);
   return pass;
 }
 
-int main(int argc, uint8_t *argv[]) {
-  extern uint32_t vlmax_u32();
-  printf("VLMAX in blocks: %d\n", vlmax_u32());
+int main(int argc, char *const argv[]) {
+  bool quiet = false;
+  int c;
+  while ((c = getopt(argc, argv, "q")) != -1) {
+    if (c == 'q') {
+      quiet = true;
+    }
+  }
   FILE* rand = fopen("/dev/urandom", "r");
-  bool pass = test_chachas(rand);
-  printf("\n");
-  pass |= test_polys(rand);
+  bool pass = test_chachas(rand, !quiet);
+  if (!test_polys(rand, !quiet)) { pass = false; }
   fclose(rand);
   return pass ? 0 : 1;
 }
