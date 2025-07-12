@@ -118,6 +118,10 @@
 #define CARRY t5
 #define EXPONENT a4
 #define MAX_VL_MASK a5
+#define MAX_VL a5
+#define BLOCKS_REMAINING a4
+#define VL a6
+#define INITIAL_VL a2
 
 # Generic 130-bit multiply/mod code
 # Reads 5-limbed inputs from a and b, writes result to a
@@ -442,9 +446,12 @@ vector_poly1305_blocks:
 	# shift pad bit into position
 	slli PADBIT, PADBIT, 24
 
+	vsetivli MAX_VL, 8, e32, m1, ta, ma
+	add INPUT_END, INPUT, LENGTH
+	srli BLOCKS_REMAINING, LENGTH, 4
+
 	# set up state as initial zero step
-	vsetivli a5, 8, e32, m1, ta, ma
-	add a5, a5, -1
+	vsetvli INITIAL_VL, BLOCKS_REMAINING, e32, m1, tu, ma
 	vmv.v.i VACCUM0, 0
 	vmv.v.i VACCUM1, 0
 	vmv.v.i VACCUM2, 0
@@ -453,22 +460,16 @@ vector_poly1305_blocks:
 	# add scalar accumulation to first vector element
 	vsetivli zero, 1, e32, m1, tu, ma
 	vlseg5e32.v VACCUM0, (CONTEXT)
-
-	# a4: blocks left
-	# a5: max_blocks - 1
-	# a6: current blocks vl
-	add INPUT_END, INPUT, LENGTH
-	srli a4, LENGTH, 4
-	vsetvli a6, a4, e32, m1, tu, ma
+	vsetvli VL, BLOCKS_REMAINING, e32, m1, tu, ma
 
 vector_loop:
-
 	# load in new data:
 	vlseg4e32.v VLOAD0, (INPUT)
 	# adjust pointers/counters
-	slli t0, a6, 4
+	slli t0, VL, 4
 	add INPUT, INPUT, t0
-	sub a4, a4, a6
+	sub BLOCKS_REMAINING, BLOCKS_REMAINING, VL
+
 	# From VLOAD, separate out into 5 26-bit limbs into VTMP
 	vand.vx VTMP0, VLOAD0, LIMB_MASK
 	vsrl.vi VLOAD0, VLOAD0, 26
@@ -484,7 +485,6 @@ vector_loop:
 	vor.vv VLOAD2, VLOAD2, VTMP
 	vand.vx VTMP3, VLOAD2, LIMB_MASK
 	vsrl.vi VTMP4, VLOAD3, 8
-
 	# add leading bit
 	vor.vx VTMP4, VTMP4, PADBIT
 
@@ -499,39 +499,38 @@ vector_loop:
 	bge INPUT, INPUT_END, rotate_powers
 
 	## multiply by r^vlmax
-	vsetvli a6, a4, e32, m1, tu, ma
+	vsetvli VL, BLOCKS_REMAINING, e32, m1, tu, ma
 	vec_mul130 vx VACCUM0 VACCUM1 VACCUM2 VACCUM3 VACCUM4 R0 R1 R2 R3 R4 R1x5 R2x5 R3x5 R4x5 vx
 	j vector_loop
 
 rotate_powers:
-	# TODO: if the last block is full, branch to tail_rotate_powers
-	#bgt a6, a5, tail_rotate_powers
-	# TODO: if we never had a full block, branch to tail_rotate_powers
+	# If the final block is full or we never had a full block, skip loading the top elements.
+	beq VL, MAX_VL, tail_rotate_powers
+	blt INITIAL_VL, MAX_VL, tail_rotate_powers
 
-	# TODO: read rotated in place with two vlseg5 instead of vslides
 	# load power of r vector limbs
-	vsetivli t1, 8, e32, m1, tu, ma
+	vsetivli zero, 8, e32, m1, tu, ma
 	add t0, CONTEXT, 20
 	vlseg5e32.v VLOAD0, (t0)
 	# first slide up the high powers
-	sub t0, t1, a6
-	vslideup.vx VPOWER0, VLOAD0, a6
-	vslideup.vx VPOWER1, VLOAD1, a6
-	vslideup.vx VPOWER2, VLOAD2, a6
-	vslideup.vx VPOWER3, VLOAD3, a6
-	vslideup.vx VPOWER4, VLOAD4, a6
+	vslideup.vx VPOWER0, VLOAD0, VL
+	vslideup.vx VPOWER1, VLOAD1, VL
+	vslideup.vx VPOWER2, VLOAD2, VL
+	vslideup.vx VPOWER3, VLOAD3, VL
+	vslideup.vx VPOWER4, VLOAD4, VL
 tail_rotate_powers:
 	# then load the lower powers into the empty space
-	li t1, 20
-	mul t0, t0, t1
+	sub t0, MAX_VL, VL
+	slli t1, t0, 2
+	add t1, t1, t0
+	slli t0, t1, 2
 	add t0, t0, 20
 	add t0, CONTEXT, t0
-	vsetvli zero, a6, e32, m1, tu, ma
+	vsetvli zero, VL, e32, m1, tu, ma
 	vlseg5e32.v VPOWER0, (t0)
 
 mul_powers_of_r:
-	# TODO: always use low VL for short inputs
-	vsetivli zero, 8, e32, m1, ta, ma
+	vsetvli zero, INITIAL_VL, e32, m1, ta, ma
 	# multiply in powers of r vector
 	vsll.vi VPOWER1x5, VPOWER1, 2
 	vadd.vv VPOWER1x5, VPOWER1x5, VPOWER1
