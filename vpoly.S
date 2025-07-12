@@ -446,12 +446,21 @@ vector_poly1305_blocks:
 	# shift pad bit into position
 	slli PADBIT, PADBIT, 24
 
+	# The vector unit may be larger than the fixed context struct, so we cap MAX_VL at 8.
+	# TODO: Perhaps we can dynamically generate the larger powers of r to fill
+	# the larger VL if the input is long enough.
 	vsetivli MAX_VL, 8, e32, m1, ta, ma
 	add INPUT_END, INPUT, LENGTH
 	srli BLOCKS_REMAINING, LENGTH, 4
 
+	# We need to do vsetvl manually as we're potentially 
+	# using a smaller max than the vector unit can handle.
+	mv INITIAL_VL, BLOCKS_REMAINING
+	ble INITIAL_VL, MAX_VL, cap_vl1
+	li INITIAL_VL, 8
+cap_vl1:
+	vsetvli INITIAL_VL, INITIAL_VL, e32, m1, tu, ma
 	# set up state as initial zero step
-	vsetvli INITIAL_VL, BLOCKS_REMAINING, e32, m1, tu, ma
 	vmv.v.i VACCUM0, 0
 	vmv.v.i VACCUM1, 0
 	vmv.v.i VACCUM2, 0
@@ -460,7 +469,7 @@ vector_poly1305_blocks:
 	# add scalar accumulation to first vector element
 	vsetivli zero, 1, e32, m1, tu, ma
 	vlseg5e32.v VACCUM0, (CONTEXT)
-	vsetvli VL, BLOCKS_REMAINING, e32, m1, tu, ma
+	vsetvli VL, INITIAL_VL, e32, m1, tu, ma
 
 vector_loop:
 	# load in new data:
@@ -498,8 +507,13 @@ vector_loop:
 	# End final loop before batch multiply.
 	bge INPUT, INPUT_END, rotate_powers
 
+	# Manual vsetvl
+	mv VL, BLOCKS_REMAINING
+	ble VL, MAX_VL, cap_vl2
+	li VL, 8
+cap_vl2:
+	vsetvli VL, VL, e32, m1, tu, ma
 	## multiply by r^vlmax
-	vsetvli VL, BLOCKS_REMAINING, e32, m1, tu, ma
 	vec_mul130 vx VACCUM0 VACCUM1 VACCUM2 VACCUM3 VACCUM4 R0 R1 R2 R3 R4 R1x5 R2x5 R3x5 R4x5 vx
 	j vector_loop
 

@@ -22,4 +22,5 @@ CC=riscv64-unknown-linux-gnu-gcc
 CPU=rv64,v=true,zvkb=true,rvv_ta_all_1s=on,rvv_ma_all_1s=on
 $CC -march=rv64gcv_zvkb main.c boring.c vchacha.s vpoly.S -o main -O -static &&
     qemu-riscv64 -cpu $CPU,vlen=128 main -q &&
-    qemu-riscv64 -cpu $CPU,vlen=256 main -q
+    qemu-riscv64 -cpu $CPU,vlen=256 main -q &&
+    qemu-riscv64 -cpu $CPU,vlen=512 main -q
