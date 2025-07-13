@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/resource.h>
 #include <unistd.h>
 #include "boring.h"
 
@@ -252,14 +253,25 @@ void run_benchmark(const char* function, size_t input_size, size_t num_runs) {
   boring_poly1305_update(&boring_state, key, 32);
   boring_poly1305_finish(&boring_state, sig);
 
+  struct rusage time_stuff;
+  getrusage(RUSAGE_SELF, &time_stuff);
+  uint64_t micros_start = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
   uint64_t cycle_start = cycle_counter();
+
   for (int i = 0; i < num_runs; i++) {
     boring_poly1305_init(&boring_state, key);
     boring_poly1305_update(&boring_state, data, input_size);
     boring_poly1305_finish(&boring_state, sig);
   }
+
   uint64_t cycles = cycle_counter() - cycle_start;
-  printf("%s cycles/byte=%.2f\n", function, (double)(cycles)/(input_size*num_runs));
+  getrusage(RUSAGE_SELF, &time_stuff);
+  uint64_t micros_end = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
+  uint64_t micros = micros_end - micros_start;
+
+  printf("%s size=%ld %.1fMB/s cycles/byte=%.2f\n", function, input_size,
+  	(double)(input_size*num_runs)/micros,
+  	(double)(cycles)/(input_size*num_runs));
 } 
 
 int main(int argc, char *const argv[]) {
