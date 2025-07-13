@@ -32,6 +32,7 @@ void println_hex(uint8_t* data, int size) {
 // test function with multiple length inputs (optional printing)
 // test non-block sized lengths
 
+extern uint64_t cycle_counter();
 extern uint64_t instruction_counter();
 extern uint32_t vlmax_u32();
 
@@ -98,7 +99,7 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
   return pass;
 }
 
-bool test_chachas(FILE* f, bool verbose) {
+bool test_chachas(FILE* f) {
   int len = 64*1024 - 11;
   uint8_t* data = malloc(len);
   uint32_t rand = 1;
@@ -111,7 +112,7 @@ bool test_chachas(FILE* f, bool verbose) {
   uint8_t nonce[12] = "BurnAfterUse";
   int counter = 0;
 
-  bool pass = test_chacha(data, len, key, nonce, verbose);
+  bool pass = test_chacha(data, len, key, nonce, false);
 
   if (pass) {
     for (int i = 1, len = 1; len < 1000; len += i++) {
@@ -203,7 +204,7 @@ bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verb
   return pass;
 }
 
-bool test_polys(FILE* f, bool verbose) {
+bool test_polys(FILE* f) {
   const int big_len = 64*1024;
   uint8_t *max_bits = malloc(big_len);
   memset(max_bits, 0xff, big_len);
@@ -212,7 +213,7 @@ bool test_polys(FILE* f, bool verbose) {
   			   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
   const uint8_t data[272] = "Setec astronomy;too many secrets";
   // Test with all bits set in inputs to trigger as many carries as possible.
-  bool pass = test_poly(max_bits, big_len, max_bits, verbose);
+  bool pass = test_poly(max_bits, big_len, max_bits, false);
 
   if (pass) {
     // random test
@@ -239,17 +240,45 @@ bool test_polys(FILE* f, bool verbose) {
   return pass;
 }
 
+void run_benchmark(const char* function, size_t input_size, size_t num_runs) {
+  double state[24];
+  poly1305_state boring_state;
+  uint8_t key[32], sig[16];
+  uint8_t* data = malloc(input_size);
+  memset(key, 0xaa, 32);
+  memset(data, 0x55, input_size);
+  // Warm up the instruction cache.
+  boring_poly1305_init(&boring_state, key);
+  boring_poly1305_update(&boring_state, key, 32);
+  boring_poly1305_finish(&boring_state, sig);
+
+  uint64_t cycle_start = cycle_counter();
+  for (int i = 0; i < num_runs; i++) {
+    boring_poly1305_init(&boring_state, key);
+    boring_poly1305_update(&boring_state, data, input_size);
+    boring_poly1305_finish(&boring_state, sig);
+  }
+  uint64_t cycles = cycle_counter() - cycle_start;
+  printf("%s cycles/byte=%.2f\n", function, (double)(cycles)/(input_size*num_runs));
+} 
+
 int main(int argc, char *const argv[]) {
-  bool quiet = false;
+  bool benchmark = false;
   int c;
-  while ((c = getopt(argc, argv, "q")) != -1) {
-    if (c == 'q') {
-      quiet = true;
+  while ((c = getopt(argc, argv, "b")) != -1) {
+    switch (c) {
+      case 'b':
+        benchmark = true;
+	break;
     }
   }
-  FILE* rand = fopen("/dev/urandom", "r");
-  bool pass = test_chachas(rand, !quiet);
-  if (!test_polys(rand, !quiet)) { pass = false; }
-  fclose(rand);
-  return pass ? 0 : 1;
+  if (benchmark) {
+    run_benchmark("boring", 1024, 100);
+  } else {
+    FILE* rand = fopen("/dev/urandom", "r");
+    bool pass = test_chachas(rand);
+    if (!test_polys(rand)) { pass = false; }
+    fclose(rand);
+    return pass ? 0 : 1;
+  }
 }

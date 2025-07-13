@@ -12,10 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+.global cycle_counter
 .global instruction_counter
 .global vector_chacha20
 .global vector_chacha20_zvkb
 .global vlmax_u32
+
+cycle_counter:
+	rdcycle a0
+	ret
 
 instruction_counter:
 	rdinstret a0
