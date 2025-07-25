@@ -44,9 +44,11 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
   extern void vector_chacha20(uint8_t *out, const uint8_t *in,
 			      size_t in_len, const uint8_t key[32],
 			      const uint8_t nonce[12], uint32_t counter);
+#ifdef __riscv_zvkb
   extern void vector_chacha20_zvkb(uint8_t *out, const uint8_t *in,
 			           size_t in_len, const uint8_t key[32],
 			           const uint8_t nonce[12], uint32_t counter);
+#endif
   uint8_t* golden = malloc(len);
   memset(golden, 0, len);
   uint64_t start = instruction_counter();
@@ -64,7 +66,9 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
   uint8_t* vector_rotate = malloc(len+4);
   memset(vector_rotate, 0, len+4);
   start = instruction_counter();
+#ifdef __riscv_zvkb
   vector_chacha20_zvkb(vector_rotate, data, len, key, nonce, 0);
+#endif
   end = instruction_counter();
   uint64_t vector_rotate_count = end-start;
 

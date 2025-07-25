@@ -309,5 +309,7 @@ return_\name:
 vector_chacha20:
 	CHACHA_FUNC_BODY emulated
 
+#ifdef __riscv_zvkb
 vector_chacha20_zvkb:
 	CHACHA_FUNC_BODY native
+#endif

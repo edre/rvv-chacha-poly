@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Copyright 2020 Google LLC
 #
@@ -14,6 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-gcc -march=rv64gcv_zvkb main.c boring.c vchacha.s vpoly.S -o main -O -static || exit 1
+gcc -march=rv64gcv main.c boring.c vchacha.S vpoly.S -o main -O -static || exit 1
 
 ./main -b
