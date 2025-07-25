@@ -12,6 +12,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. */
 
+#include <errno.h>
+#include <linux/perf_event.h>
+#include <sys/ioctl.h>
+#include <sys/syscall.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -33,8 +37,6 @@ void println_hex(uint8_t* data, int size) {
 // test function with multiple length inputs (optional printing)
 // test non-block sized lengths
 
-extern uint64_t cycle_counter();
-extern uint64_t instruction_counter();
 extern uint32_t vlmax_u32();
 
 const char* pass_str = "\x1b[32mPASS\x1b[0m";
@@ -51,39 +53,28 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
 #endif
   uint8_t* golden = malloc(len);
   memset(golden, 0, len);
-  uint64_t start = instruction_counter();
   boring_chacha20(golden, data, len, key, nonce, 0);
-  uint64_t end = instruction_counter();
-  uint64_t boring_count = end - start;
 
   uint8_t* vector = malloc(len + 4);
   memset(vector, 0, len+4);
-  start = instruction_counter();
   vector_chacha20(vector, data, len, key, nonce, 0);
-  end = instruction_counter();
-  uint64_t vector_count = end-start;
 
   uint8_t* vector_rotate = malloc(len+4);
   memset(vector_rotate, 0, len+4);
-  start = instruction_counter();
 #ifdef __riscv_zvkb
   vector_chacha20_zvkb(vector_rotate, data, len, key, nonce, 0);
 #endif
-  end = instruction_counter();
-  uint64_t vector_rotate_count = end-start;
 
   bool pass = memcmp(golden, vector, len) == 0 && memcmp(golden, vector_rotate, len) == 0;
 
   if (verbose || !pass) {
     printf("golden: ");
     println_hex(golden, 32);
-    printf("inst_count=%ld, inst/byte=%.02f\n", boring_count, (float)(boring_count)/len);
-    printf("vector: ");
+    printf("\nvector: ");
     println_hex(vector, 32);
-    printf("inst_count=%ld, inst/byte=%.02f\n", vector_count, (float)(vector_count)/len);
-    printf("rotate: ");
+    printf("\nrotate: ");
     println_hex(vector_rotate, 32);
-    printf("inst_count=%ld, inst/byte=%.02f\n", vector_rotate_count, (float)(vector_rotate_count)/len);
+    printf("\n");
   }
 
   uint32_t past_end = vector[len];
@@ -147,12 +138,11 @@ extern void vector_poly1305_single_blocks(void *ctx, const unsigned char *inp,
 extern void vector_poly1305_emit(void *ctx, unsigned char mac[16],
 		  const uint8_t nonce[16]);
 
-uint64_t vector_poly1305(const uint8_t* in, size_t len,
+void vector_poly1305(const uint8_t* in, size_t len,
 		const uint8_t key[32], uint8_t sig[16],
 		void (*blocks)(void *ctx, const unsigned char *inp, size_t len, uint32_t padbit)) {
   double state[24];  // openssl's scratch space
   vector_poly1305_init(&state, key);
-  uint64_t precomputation_end = instruction_counter();
   size_t block_len = len &~ 15;
   blocks(&state, in, block_len, 1);
   if (len > block_len) {
@@ -164,46 +154,30 @@ uint64_t vector_poly1305(const uint8_t* in, size_t len,
     blocks(&state, buffer, 16, 0);
   }
   vector_poly1305_emit(&state, sig, key+16);
-  return precomputation_end;
 }
 
 bool test_poly(const uint8_t* data, size_t len, const uint8_t key[32], bool verbose) {
   poly1305_state state;
   uint8_t sig[16];
-  uint64_t start = instruction_counter();
   boring_poly1305_init(&state, key);
   boring_poly1305_update(&state, data, len);
   boring_poly1305_finish(&state, sig);
-  uint64_t end = instruction_counter();
-  uint64_t boring_count = end - start;
 
   uint8_t sig2[16];
-  start = instruction_counter();
-  uint64_t mid = vector_poly1305(data, len, key, sig2, vector_poly1305_blocks);
-  end = instruction_counter();
-  uint64_t multi_count = end - mid;
-  uint64_t multi_init = mid - start;
+  vector_poly1305(data, len, key, sig2, vector_poly1305_blocks);
 
   uint8_t sig3[16];
-  start = instruction_counter();
-  mid = vector_poly1305(data, len, key, sig3, vector_poly1305_single_blocks);
-  end = instruction_counter();
-  uint64_t single_count = end - mid;
+  vector_poly1305(data, len, key, sig3, vector_poly1305_single_blocks);
 
   bool pass = memcmp(sig, sig2, 16) == 0 && memcmp(sig, sig3, 16) == 0;
 
   if (verbose || !pass) {
     printf("boring mac: ");
     println_hex(sig, 16);
-    printf("inst_count=%ld, inst/byte=%.02f\n", boring_count, (float)(boring_count)/len);
     printf("vector mac: ");
     println_hex(sig2, 16);
-    printf("precomputation=%ld, processing=%ld, inst/byte=%.02f\n",
-	   multi_init, multi_count, (float)(multi_count)/len);
     printf("block1 mac: ");
     println_hex(sig3, 16);
-    printf("processing=%ld, inst/byte=%.02f\n",
-	   single_count, (float)(single_count)/len);
   }
 
   return pass;
@@ -246,6 +220,20 @@ bool test_polys(FILE* f) {
 }
 
 void run_benchmark(const char* function, size_t input_size, size_t num_runs) {
+  struct perf_event_attr perf;
+  memset(&perf, 0, sizeof(struct perf_event_attr));
+  perf.type = PERF_TYPE_HARDWARE;
+  perf.size = sizeof(struct perf_event_attr);
+  perf.config = PERF_COUNT_HW_CPU_CYCLES;
+  perf.disabled = 1;
+  perf.exclude_kernel = 1;
+  perf.exclude_hv = 1;
+  int fd = syscall(SYS_perf_event_open, &perf, 0, -1, -1, 0);
+  if (fd == -1) {
+    fprintf(stderr, "Error opening perf event: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
   double state[24];
   poly1305_state boring_state;
   uint8_t key[32], sig[16];
@@ -260,7 +248,8 @@ void run_benchmark(const char* function, size_t input_size, size_t num_runs) {
   struct rusage time_stuff;
   getrusage(RUSAGE_SELF, &time_stuff);
   uint64_t micros_start = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
-  uint64_t cycle_start = cycle_counter();
+  ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+  ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
 
   for (int i = 0; i < num_runs; i++) {
     boring_poly1305_init(&boring_state, key);
@@ -268,10 +257,16 @@ void run_benchmark(const char* function, size_t input_size, size_t num_runs) {
     boring_poly1305_finish(&boring_state, sig);
   }
 
-  uint64_t cycles = cycle_counter() - cycle_start;
+  ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
   getrusage(RUSAGE_SELF, &time_stuff);
   uint64_t micros_end = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
   uint64_t micros = micros_end - micros_start;
+
+  uint64_t cycles;
+  if (read(fd, &cycles, sizeof(cycles)) == -1) {
+    fprintf(stderr, "Error reading perf event: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
 
   printf("%s size=%ld %.1fMB/s cycles/byte=%.2f\n", function, input_size,
   	(double)(input_size*num_runs)/micros,

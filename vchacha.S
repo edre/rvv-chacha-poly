@@ -18,14 +18,6 @@
 .global vector_chacha20_zvkb
 .global vlmax_u32
 
-cycle_counter:
-	rdcycle a0
-	ret
-
-instruction_counter:
-	rdinstret a0
-	ret
-
 vlmax_u32:
 	vsetvli a0, x0, e32, m1, ta, ma
 	ret
