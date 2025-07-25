@@ -219,7 +219,7 @@ bool test_polys(FILE* f) {
   return pass;
 }
 
-void run_benchmark(const char* function, size_t input_size, size_t num_runs) {
+void run_benchmarks(size_t input_size, size_t num_runs) {
   struct perf_event_attr perf;
   memset(&perf, 0, sizeof(struct perf_event_attr));
   perf.type = PERF_TYPE_HARDWARE;
@@ -234,27 +234,27 @@ void run_benchmark(const char* function, size_t input_size, size_t num_runs) {
     exit(EXIT_FAILURE);
   }
 
-  double state[24];
+  struct rusage time_stuff;
+
+  double vector_state[24];
   poly1305_state boring_state;
   uint8_t key[32], sig[16];
   uint8_t* data = malloc(input_size);
   memset(key, 0xaa, 32);
   memset(data, 0x55, input_size);
-  // Warm up the instruction cache.
-  boring_poly1305_init(&boring_state, key);
-  boring_poly1305_update(&boring_state, key, 32);
-  boring_poly1305_finish(&boring_state, sig);
 
-  struct rusage time_stuff;
+
+  // Benchmark init.
+  // Warm up the instruction cache.
+  vector_poly1305_init(&vector_state, key);
+
   getrusage(RUSAGE_SELF, &time_stuff);
   uint64_t micros_start = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
   ioctl(fd, PERF_EVENT_IOC_RESET, 0);
   ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
 
   for (int i = 0; i < num_runs; i++) {
-    boring_poly1305_init(&boring_state, key);
-    boring_poly1305_update(&boring_state, data, input_size);
-    boring_poly1305_finish(&boring_state, sig);
+    vector_poly1305_init(&vector_state, key);
   }
 
   ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
@@ -268,7 +268,104 @@ void run_benchmark(const char* function, size_t input_size, size_t num_runs) {
     exit(EXIT_FAILURE);
   }
 
-  printf("%s size=%ld %.1fMB/s cycles/byte=%.2f\n", function, input_size,
+  uint64_t init_size = vlmax_u32()*4;
+  printf("poly init\t% 5ld bytes\t%.1f MB/s\t%.2f cycles/byte\n", init_size,
+  	(double)(init_size*num_runs)/micros,
+  	(double)(cycles)/(init_size*num_runs));
+
+
+  // Benchmark boring.
+  // Warm up the instruction cache.
+  boring_poly1305_init(&boring_state, key);
+  boring_poly1305_update(&boring_state, key, 32);
+  boring_poly1305_finish(&boring_state, sig);
+
+  getrusage(RUSAGE_SELF, &time_stuff);
+  micros_start = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
+  ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+  ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+
+  for (int i = 0; i < num_runs; i++) {
+    boring_poly1305_init(&boring_state, key);
+    boring_poly1305_update(&boring_state, data, input_size);
+    boring_poly1305_finish(&boring_state, sig);
+  }
+
+  ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+  getrusage(RUSAGE_SELF, &time_stuff);
+  micros_end = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
+  micros = micros_end - micros_start;
+
+  if (read(fd, &cycles, sizeof(cycles)) == -1) {
+    fprintf(stderr, "Error reading perf event: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  printf("poly boring\t% 5ld bytes\t%.1f MB/s\t%.2f cycles/byte\n", input_size,
+  	(double)(input_size*num_runs)/micros,
+  	(double)(cycles)/(input_size*num_runs));
+
+
+  // Benchmark vector single.
+  // Warm up the instruction cache.
+  vector_poly1305_init(&vector_state, key);
+  vector_poly1305_single_blocks(&vector_state, key, 32, 1);
+  vector_poly1305_emit(&vector_state, key+16, sig);
+
+  getrusage(RUSAGE_SELF, &time_stuff);
+  micros_start = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
+  ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+  ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+
+  for (int i = 0; i < num_runs; i++) {
+    vector_poly1305_init(&vector_state, key);
+    vector_poly1305_single_blocks(&vector_state, data, input_size, 1);
+    vector_poly1305_emit(&vector_state, key+16, sig);
+  }
+
+  ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+  getrusage(RUSAGE_SELF, &time_stuff);
+  micros_end = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
+  micros = micros_end - micros_start;
+
+  if (read(fd, &cycles, sizeof(cycles)) == -1) {
+    fprintf(stderr, "Error reading perf event: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  printf("poly vsingle\t% 5ld bytes\t%.1f MB/s\t%.2f cycles/byte\n", input_size,
+  	(double)(input_size*num_runs)/micros,
+  	(double)(cycles)/(input_size*num_runs));
+
+
+  // Benchmark vector blocks.
+  // Warm up the instruction cache.
+  vector_poly1305_init(&vector_state, key);
+  vector_poly1305_blocks(&vector_state, key, 32, 1);
+  vector_poly1305_emit(&vector_state, key+16, sig);
+
+  getrusage(RUSAGE_SELF, &time_stuff);
+  micros_start = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
+  ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+  ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+
+  for (int i = 0; i < num_runs; i++) {
+    vector_poly1305_init(&vector_state, key);
+    vector_poly1305_blocks(&vector_state, data, input_size, 1);
+    vector_poly1305_emit(&vector_state, key+16, sig);
+  }
+
+  ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+  getrusage(RUSAGE_SELF, &time_stuff);
+  micros_end = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
+  micros = micros_end - micros_start;
+
+  if (read(fd, &cycles, sizeof(cycles)) == -1) {
+    fprintf(stderr, "Error reading perf event: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  printf("poly vblocks\t% 5ld bytes\t%.1f MB/s\t%.2f cycles/byte\n", input_size,
   	(double)(input_size*num_runs)/micros,
   	(double)(cycles)/(input_size*num_runs));
 } 
@@ -284,7 +381,7 @@ int main(int argc, char *const argv[]) {
     }
   }
   if (benchmark) {
-    run_benchmark("boring", 1024, 100);
+    run_benchmarks(1024, 100);
   } else {
     FILE* rand = fopen("/dev/urandom", "r");
     bool pass = test_chachas(rand);
