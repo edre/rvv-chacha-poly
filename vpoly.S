@@ -14,6 +14,7 @@
 
 .global vector_poly1305_init
 .global vector_poly1305_blocks
+.global vector_poly1305_multi_blocks
 .global vector_poly1305_single_blocks
 .global vector_poly1305_emit
 # poly1305
@@ -328,6 +329,14 @@ vector_poly1305_init:
 
 # void poly1305_blocks(void *ctx, const unsigned char *inp, size_t len, u32 padbit)
 vector_poly1305_blocks:
+	# Choose whether to use single_blocks or multi_blocks.
+	# Single_blocks is faster for short inputs, so we only run it
+	# when multi_blocks can't fill the entire vector.
+	vsetivli t0, 8, e32, m1, ta, ma
+	slli t0, t0, 5
+	blt LENGTH, t0, vector_poly1305_single_blocks
+
+vector_poly1305_multi_blocks:
 	# save registers
 	sd s0, -8(sp)
 	sd s1, -16(sp)
@@ -340,8 +349,6 @@ vector_poly1305_blocks:
 	sd s8, -72(sp)
 	sd s9, -80(sp)
 	
-	beqz LENGTH, blocks_return
-
 	# check to see if powers are already cached
 	lw t0, 180(CONTEXT)
 	bnez t0, do_the_multi_blocks
@@ -603,7 +610,6 @@ mul_powers_of_r:
 	sw ACCUM3, 12(CONTEXT)
 	sw ACCUM4, 16(CONTEXT)
 
-blocks_return:
 	# restore registers
 	ld s0, -8(sp)
 	ld s1, -16(sp)
