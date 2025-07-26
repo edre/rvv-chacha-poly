@@ -24,14 +24,9 @@
 # s + m[0:16] * r⁴ + m[16:32] * r³ + m[32:48] * r² + m[48:64] * r  mod  2¹³⁰ - 5
 # Performant implementations represent 130 bit numbers as 5 26-bit numbers.
 # Precomputation step:
-#   Compute vector [r, r², r³, r⁴, ...] ( 5 32-bit vectors)
-#   Compute scalar r^VLMAX (5 32-bit registers)
-#   This can be done in 2*log2(VLMAX) multiplications:
-#   i = 1; m = r; v = r
-#   while i < VLMAX:
-#       v *= m (masking out the last i elements)
-#       m *= m
-#       i <<= 1
+#   Compute vector [r^VLMAX, ..., r³, r², r] ( 5 32-bit vectors)
+#     Can be done in log2(VLMAX) poly multiplications
+#   Extract scalar r^VLMAX (5 32-bit registers)
 # Vector loop:
 #   load segment (from the end) into 4 32-bit vectors
 #   spread into standard 5 32-bit vector format
@@ -89,7 +84,6 @@
 #define VWIDE3 v18
 #define VWIDE4 v20
 
-#define VMASK v0
 #define VCARRY v22
 #define VTMP0 v23
 #define VTMP1 v24
@@ -116,8 +110,6 @@
 #define INPUT_END a7
 #define LIMB_MASK t6
 #define CARRY t5
-#define EXPONENT a4
-#define MAX_VL_MASK a5
 #define MAX_VL a5
 #define BLOCKS_REMAINING a4
 #define VL a6
@@ -128,7 +120,7 @@
 # Generic 130-bit multiply/mod code
 # Reads 5-limbed inputs from a and b, writes result to a
 # Uses 5 e64,m2 d registers for accumulation
-.macro vec_mul130 x a0 a1 a2 a3 a4 b0 b1 b2 b3 b4 b1x5 b2x5 b3x5 b4x5 v mask=""
+.macro vec_mul130 x a0 a1 a2 a3 a4 b0 b1 b2 b3 b4 b1x5 b2x5 b3x5 b4x5 v
 	# Helpful diagram from http://loup-vaillant.fr/tutorials/poly1305-design
 	#      a4      a3      a2      a1      a0
 	# ×    b4      b3      b2      b1      b0
@@ -143,47 +135,47 @@
 
 	# Evaluated by rows to allow instructional parallelism in the accumulation.
 	# b0 row
-	vwmulu.\v VWIDE0, \a0, \b0 \mask
-	vwmulu.\v VWIDE1, \a1, \b0 \mask
-	vwmulu.\v VWIDE2, \a2, \b0 \mask
-	vwmulu.\v VWIDE3, \a3, \b0 \mask
-	vwmulu.\v VWIDE4, \a4, \b0 \mask
+	vwmulu.\v VWIDE0, \a0, \b0
+	vwmulu.\v VWIDE1, \a1, \b0
+	vwmulu.\v VWIDE2, \a2, \b0
+	vwmulu.\v VWIDE3, \a3, \b0
+	vwmulu.\v VWIDE4, \a4, \b0
 
 	# b1 row
-	vwmaccu.\v VWIDE0, \b1x5, \a4 \mask
-	vwmaccu.\v VWIDE1, \b1, \a0 \mask
-	vwmaccu.\v VWIDE2, \b1, \a1 \mask
-	vwmaccu.\v VWIDE3, \b1, \a2 \mask
-	vwmaccu.\v VWIDE4, \b1, \a3 \mask
+	vwmaccu.\v VWIDE0, \b1x5, \a4
+	vwmaccu.\v VWIDE1, \b1, \a0
+	vwmaccu.\v VWIDE2, \b1, \a1
+	vwmaccu.\v VWIDE3, \b1, \a2
+	vwmaccu.\v VWIDE4, \b1, \a3
 
 	# b2 row
-	vwmaccu.\v VWIDE0, \b2x5, \a3 \mask
-	vwmaccu.\v VWIDE1, \b2x5, \a4 \mask
-	vwmaccu.\v VWIDE2, \b2, \a0 \mask
-	vwmaccu.\v VWIDE3, \b2, \a1 \mask
-	vwmaccu.\v VWIDE4, \b2, \a2 \mask
+	vwmaccu.\v VWIDE0, \b2x5, \a3
+	vwmaccu.\v VWIDE1, \b2x5, \a4
+	vwmaccu.\v VWIDE2, \b2, \a0
+	vwmaccu.\v VWIDE3, \b2, \a1
+	vwmaccu.\v VWIDE4, \b2, \a2
 	
 	# b3 row
-	vwmaccu.\v VWIDE0, \b3x5, \a2 \mask
-	vwmaccu.\v VWIDE1, \b3x5, \a3 \mask
-	vwmaccu.\v VWIDE2, \b3x5, \a4 \mask
-	vwmaccu.\v VWIDE3, \b3, \a0 \mask
-	vwmaccu.\v VWIDE4, \b3, \a1 \mask
+	vwmaccu.\v VWIDE0, \b3x5, \a2
+	vwmaccu.\v VWIDE1, \b3x5, \a3
+	vwmaccu.\v VWIDE2, \b3x5, \a4
+	vwmaccu.\v VWIDE3, \b3, \a0
+	vwmaccu.\v VWIDE4, \b3, \a1
 
 	# b4 row
-	vwmaccu.\v VWIDE0, \b4x5, \a1 \mask
-	vwmaccu.\v VWIDE1, \b4x5, \a2 \mask
-	vwmaccu.\v VWIDE2, \b4x5, \a3 \mask
-	vwmaccu.\v VWIDE3, \b4x5, \a4 \mask
-	vwmaccu.\v VWIDE4, \b4, \a0 \mask
+	vwmaccu.\v VWIDE0, \b4x5, \a1
+	vwmaccu.\v VWIDE1, \b4x5, \a2
+	vwmaccu.\v VWIDE2, \b4x5, \a3
+	vwmaccu.\v VWIDE3, \b4x5, \a4
+	vwmaccu.\v VWIDE4, \b4, \a0
 
 	# Carry propagation
 	# logic copied from https://github.com/floodyberry/poly1305-donna
 	.macro carry_prop\x a d
-	vwaddu.wv \d, \d, VCARRY \mask
-	vnsrl.wi VCARRY, \d, 26 \mask
-	vnsrl.wi \a, \d, 0 \mask
-	vand.vx \a, \a, LIMB_MASK \mask
+	vwaddu.wv \d, \d, VCARRY
+	vnsrl.wi VCARRY, \d, 26
+	vnsrl.wi \a, \d, 0
+	vand.vx \a, \a, LIMB_MASK
 	.endm
 
 	vmv.v.i VCARRY, 0
@@ -194,13 +186,13 @@
 	carry_prop\x \a4, VWIDE4
 
 	# wraparound carry continue
-	vsll.vi VTMP, VCARRY, 2 \mask
-	vadd.vv \a0, \a0, VTMP \mask
-	vadd.vv \a0, \a0, VCARRY \mask
+	vsll.vi VTMP, VCARRY, 2
+	vadd.vv \a0, \a0, VTMP
+	vadd.vv \a0, \a0, VCARRY
 	# boring stops carrying here, but that fails random tests
-	vsrl.vi VCARRY, \a0, 26 \mask
-	vand.vx \a0, \a0, LIMB_MASK \mask
-	vadd.vv \a1, \a1, VCARRY \mask
+	vsrl.vi VCARRY, \a0, 26
+	vand.vx \a0, \a0, LIMB_MASK
+	vadd.vv \a1, \a1, VCARRY
 
 .endm
 
@@ -328,45 +320,53 @@ vector_poly1305_init:
 	add R3x5, R3x5, R3
 	add R4x5, R4x5, R4
 
-	# MAX_VL_MASK is vlmax-1 for e32m1
-	vsetivli MAX_VL_MASK, 8, e32, m1, ta, mu
-	add MAX_VL_MASK, MAX_VL_MASK, -1
-	# splat r^1 to whole vector
+	# move r^1 to second element
+	vsetivli zero, 2, e32, m1, ta, ma
 	vmv.v.x VPOWER0, R0
 	vmv.v.x VPOWER1, R1
 	vmv.v.x VPOWER2, R2
 	vmv.v.x VPOWER3, R3
 	vmv.v.x VPOWER4, R4
 
-	# Do first iteration manually, as we can masked set r^2 instead of doing a second multiplication
-	li EXPONENT, 1
-	# set alternating mask pattern
-	vid.v VTMP
-	vrsub.vx VTMP, VTMP, MAX_VL_MASK
-	vand.vx VTMP, VTMP, EXPONENT
-	vmseq.vx VMASK, VTMP, EXPONENT
-	slli EXPONENT, EXPONENT, 1
+	# Do first iteration manually, as scalar squaring is faster than vector multiplying.
 
 	# scalar-scalar 130bit mul: R = R * R
 	scalar_mul130 R0 R1 R2 R3 R4 R3x5 R4x5 t0 t1 t2 t3 t4 s9
 
-	vmv.v.i VTMP, 0 # no vmv with mask, so vadd with 0
-	vadd.vx VPOWER0, VTMP, R0, VMASK.t
-	vadd.vx VPOWER1, VTMP, R1, VMASK.t
-	vadd.vx VPOWER2, VTMP, R2, VMASK.t
-	vadd.vx VPOWER3, VTMP, R3, VMASK.t
-	vadd.vx VPOWER4, VTMP, R4, VMASK.t
+	# move r^2 to first element
+	vsetivli zero, 1, e32, m1, tu, ma
+	vmv.v.x VPOWER0, R0
+	vmv.v.x VPOWER1, R1
+	vmv.v.x VPOWER2, R2
+	vmv.v.x VPOWER3, R3
+	vmv.v.x VPOWER4, R4
+
+	vsetivli MAX_VL, 8, e32, m1, tu, ma
+	li VL, 2
 
 precomp:
-	# compute mask
-	# exp-1: 7,6,5,4,3,2,1,0 (MAX_VL_MASK)
-	# r^1:   1,0,1,0,1,0,1,0
-	# r^2:   1,1,0,0,1,1,0,0
-	# r^4:   1,1,1,1,0,0,0,0
-	vid.v VTMP
-	vrsub.vx VTMP, VTMP, MAX_VL_MASK
-	vand.vx VTMP, VTMP, EXPONENT
-	vmseq.vx VMASK, VTMP, EXPONENT
+	# Duplicate elements in each vector lane.
+	# [r^2, r^1] -> [r^2, r^1, r^2, r^1]
+	slli t0, VL, 1
+	vsetvli zero, t0, e32, m1, ta, ma
+	vslideup.vx VTMP0, VPOWER0, VL
+	vslideup.vx VTMP1, VPOWER1, VL
+	vslideup.vx VTMP2, VPOWER2, VL
+	vslideup.vx VTMP3, VPOWER3, VL
+	vslideup.vx VTMP4, VPOWER4, VL
+	vsetvli zero, VL, e32, m1, tu, ma
+	vmv.v.v VTMP0, VPOWER0
+	vmv.v.v VTMP1, VPOWER1
+	vmv.v.v VTMP2, VPOWER2
+	vmv.v.v VTMP3, VPOWER3
+	vmv.v.v VTMP4, VPOWER4
+	vsetvli zero, t0, e32, m1, ta, ma
+	vmv.v.v VPOWER0, VTMP0
+	vmv.v.v VPOWER1, VTMP1
+	vmv.v.v VPOWER2, VTMP2
+	vmv.v.v VPOWER3, VTMP3
+	vmv.v.v VPOWER4, VTMP4
+
 
 	# pre-multiplied-by-5 scalars
 	slli R1x5, R1, 2
@@ -377,8 +377,11 @@ precomp:
 	add R2x5, R2x5, R2
 	add R3x5, R3x5, R3
 	add R4x5, R4x5, R4
-	# vector-scalar masked 130bit mul: VPOWER = VPOWER * R
-	vec_mul130 vxm VPOWER0 VPOWER1 VPOWER2 VPOWER3 VPOWER4 R0 R1 R2 R3 R4 R1x5 R2x5 R3x5 R4x5 vx ",v0.t"
+	vsetvli zero, VL, e32, m1, tu, ma
+	# vector-scalar 130bit mul on the first half of the elements: VPOWER = VPOWER * R
+	# [r^2, r^1, r^2, r^1]
+	# *r^2 *r^2
+	vec_mul130 precomp VPOWER0 VPOWER1 VPOWER2 VPOWER3 VPOWER4 R0 R1 R2 R3 R4 R1x5 R2x5 R3x5 R4x5 vx
 
 	# extract new highest power from first element
 	vmv.x.s R0, VPOWER0
@@ -388,8 +391,8 @@ precomp:
 	vmv.x.s R4, VPOWER4
 
 	# end of precomp loop:
-	slli EXPONENT, EXPONENT, 1 # double exponent
-	blt EXPONENT, MAX_VL_MASK, precomp
+	slli VL, VL, 1
+	blt VL, MAX_VL, precomp
 
 	# store state
 	# zero initial accumulation
@@ -398,6 +401,7 @@ precomp:
 	sw zero, 16(CONTEXT)
 	# power of r vector limbs
 	add t0, CONTEXT, 20
+	vsetvli zero, VL, e32, m1, ta, ma
 	vsseg5e32.v VPOWER0, (t0)
 
 	# restore registers
