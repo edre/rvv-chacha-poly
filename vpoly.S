@@ -339,24 +339,16 @@ precomp:
 	# [r^2, r^1] -> [r^2, r^1, r^2, r^1]
 	slli t0, VL, 1
 	vsetvli zero, t0, e32, m1, ta, ma
-	vslideup.vx VTMP0, VPOWER0, VL
-	vslideup.vx VTMP1, VPOWER1, VL
-	vslideup.vx VTMP2, VPOWER2, VL
-	vslideup.vx VTMP3, VPOWER3, VL
-	vslideup.vx VTMP4, VPOWER4, VL
-	vsetvli zero, VL, e32, m1, tu, ma
 	vmv.v.v VTMP0, VPOWER0
 	vmv.v.v VTMP1, VPOWER1
 	vmv.v.v VTMP2, VPOWER2
 	vmv.v.v VTMP3, VPOWER3
 	vmv.v.v VTMP4, VPOWER4
-	vsetvli zero, t0, e32, m1, ta, ma
-	vmv.v.v VPOWER0, VTMP0
-	vmv.v.v VPOWER1, VTMP1
-	vmv.v.v VPOWER2, VTMP2
-	vmv.v.v VPOWER3, VTMP3
-	vmv.v.v VPOWER4, VTMP4
-
+	vslideup.vx VPOWER0, VTMP0, VL
+	vslideup.vx VPOWER1, VTMP1, VL
+	vslideup.vx VPOWER2, VTMP2, VL
+	vslideup.vx VPOWER3, VTMP3, VL
+	vslideup.vx VPOWER4, VTMP4, VL
 
 	# pre-multiplied-by-5 scalars
 	sh2add R1x5, R1, R1
