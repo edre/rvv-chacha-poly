@@ -19,7 +19,7 @@
 # I got qemu from my package manager.
 
 CPU=rv64,v=true,zvkb=true,rvv_ta_all_1s=on,rvv_ma_all_1s=on
-gcc -march=rv64gcv_zvkb main.c boring.c vchacha.S vpoly.S -o main -O -static &&
+gcc -march=rv64gcv_zvkb main.c boring.c openssl.c vchacha.S vpoly.S -o main -O -static &&
     qemu-riscv64 -cpu $CPU,vlen=128 main &&
     qemu-riscv64 -cpu $CPU,vlen=256 main &&
     qemu-riscv64 -cpu $CPU,vlen=512 main 

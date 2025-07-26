@@ -23,6 +23,7 @@
 #include <sys/resource.h>
 #include <unistd.h>
 #include "boring.h"
+#include "openssl.h"
 
 void println_hex(uint8_t* data, int size) {
   while (size > 0) {
@@ -147,7 +148,7 @@ void vector_poly1305(const uint8_t* in, size_t len,
   blocks(&state, in, block_len, 1);
   if (len > block_len) {
     size_t tail_len = len & 15;
-    char buffer[16];
+    uint8_t buffer[16];
     memset(buffer, 0, 16);
     memcpy(buffer, in+block_len, tail_len);
     buffer[tail_len] = 1;
@@ -238,6 +239,7 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
 
   double vector_state[24];
   poly1305_state boring_state;
+  struct poly1305_context openssl_state;
   uint8_t key[32], sig[16];
   uint8_t* data = malloc(input_size);
   memset(key, 0xaa, 32);
@@ -302,6 +304,38 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
   }
 
   printf("poly boring\t% 5ld bytes\t%.1f MB/s\t%.2f cycles/byte\n", input_size,
+  	(double)(input_size*num_runs)/micros,
+  	(double)(cycles)/(input_size*num_runs));
+
+
+  // Benchmark openssl single.
+  // Warm up the instruction cache.
+  Poly1305_Init(&openssl_state, key);
+  Poly1305_Update(&openssl_state, key, 32);
+  Poly1305_Final(&openssl_state, sig);
+
+  getrusage(RUSAGE_SELF, &time_stuff);
+  micros_start = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
+  ioctl(fd, PERF_EVENT_IOC_RESET, 0);
+  ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
+
+  for (int i = 0; i < num_runs; i++) {
+    Poly1305_Init(&openssl_state, key);
+    Poly1305_Update(&openssl_state, data, input_size);
+    Poly1305_Final(&openssl_state, sig);
+  }
+
+  ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
+  getrusage(RUSAGE_SELF, &time_stuff);
+  micros_end = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
+  micros = micros_end - micros_start;
+
+  if (read(fd, &cycles, sizeof(cycles)) == -1) {
+    fprintf(stderr, "Error reading perf event: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+
+  printf("poly openssl\t% 5ld bytes\t%.1f MB/s\t%.2f cycles/byte\n", input_size,
   	(double)(input_size*num_runs)/micros,
   	(double)(cycles)/(input_size*num_runs));
 

@@ -14,6 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-gcc -march=rv64gcv main.c boring.c vchacha.S vpoly.S -o main -O -static || exit 1
+clang -march=rv64gcvb main.c boring.c openssl.c vchacha.S vpoly.S -o main -O2 -static || exit 1
 
 ./main -b
