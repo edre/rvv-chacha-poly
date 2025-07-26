@@ -202,41 +202,36 @@
 	mul \d0, \a1, \a4x5
 	mul \tmp, \a2, \a3x5
 	add \d0, \d0, \tmp
-	slli \d0, \d0, 1
 	mul \tmp, \a0, \a0
-	add \d0, \d0, \tmp
+	sh1add \d0, \d0, \tmp
 
 	# d1 column
 	mul \d1, \a1, \a0
 	mul \tmp, \a2, \a4x5
 	add \d1, \d1, \tmp
-	slli \d1, \d1, 1
 	mul \tmp, \a3x5, \a3
-	add \d1, \d1, \tmp
+	sh1add \d1, \d1, \tmp
 
 	# d2 column
 	mul \d2, \a2, \a0
 	mul \tmp, \a3x5, \a4
 	add \d2, \d2, \tmp
-	slli \d2, \d2, 1
 	mul \tmp, \a1, \a1
-	add \d2, \d2, \tmp
+	sh1add \d2, \d2, \tmp
 
 	# d3 column
 	mul \d3, \a3, \a0
 	mul \tmp, \a1, \a2
 	add \d3, \d3, \tmp
-	slli \d3, \d3, 1
 	mul \tmp, \a4x5, \a4
-	add \d3, \d3, \tmp
+	sh1add \d3, \d3, \tmp
 
 	# d4 column
 	mul \d4, \a4, \a0
 	mul \tmp, \a1, \a3
 	add \d4, \d4, \tmp
-	slli \d4, \d4, 1
 	mul \tmp, \a2, \a2
-	add \d4, \d4, \tmp
+	sh1add \d4, \d4, \tmp
 
 	# Carry propagation
 	# logic copied from https://github.com/floodyberry/poly1305-donna
@@ -254,8 +249,7 @@
 	carry_prop_scalar \a4, \d4
 
 	# wraparound carry continue
-	slli \tmp, CARRY, 2
-	add \a0, \a0, \tmp
+	sh2add \a0, CARRY, \a0
 	add \a0, \a0, CARRY
 	# carry as much as the other mul code
 	srli CARRY, \a0, 26
@@ -311,14 +305,10 @@ vector_poly1305_init:
 	scalar_extract_limbs t0 t1 R0 R1 R2 R3 R4
 
 	# pre-multiplied-by-5 scalars
-	slli R1x5, R1, 2
-	slli R2x5, R2, 2
-	slli R3x5, R3, 2
-	slli R4x5, R4, 2
-	add R1x5, R1x5, R1
-	add R2x5, R2x5, R2
-	add R3x5, R3x5, R3
-	add R4x5, R4x5, R4
+	sh2add R1x5, R1, R1
+	sh2add R2x5, R2, R2
+	sh2add R3x5, R3, R3
+	sh2add R4x5, R4, R4
 
 	# move r^1 to second element
 	vsetivli zero, 2, e32, m1, ta, ma
@@ -369,14 +359,10 @@ precomp:
 
 
 	# pre-multiplied-by-5 scalars
-	slli R1x5, R1, 2
-	slli R2x5, R2, 2
-	slli R3x5, R3, 2
-	slli R4x5, R4, 2
-	add R1x5, R1x5, R1
-	add R2x5, R2x5, R2
-	add R3x5, R3x5, R3
-	add R4x5, R4x5, R4
+	sh2add R1x5, R1, R1
+	sh2add R2x5, R2, R2
+	sh2add R3x5, R3, R3
+	sh2add R4x5, R4, R4
 	vsetvli zero, VL, e32, m1, tu, ma
 	# vector-scalar 130bit mul on the first half of the elements: VPOWER = VPOWER * R
 	# [r^2, r^1, r^2, r^1]
@@ -441,14 +427,10 @@ vector_poly1305_blocks:
 	lw R3, 32(CONTEXT)
 	lw R4, 36(CONTEXT)
 	# pre-multiplied by 5 scalars
-	slli R1x5, R1, 2
-	slli R2x5, R2, 2
-	slli R3x5, R3, 2
-	slli R4x5, R4, 2
-	add R1x5, R1x5, R1
-	add R2x5, R2x5, R2
-	add R3x5, R3x5, R3
-	add R4x5, R4x5, R4
+	sh2add R1x5, R1, R1
+	sh2add R2x5, R2, R2
+	sh2add R3x5, R3, R3
+	sh2add R4x5, R4, R4
 	# shift pad bit into position
 	slli PADBIT, PADBIT, 24
 
@@ -461,10 +443,7 @@ vector_poly1305_blocks:
 
 	# We need to do vsetvl manually as we're potentially 
 	# using a smaller max than the vector unit can handle.
-	mv INITIAL_VL, BLOCKS_REMAINING
-	ble INITIAL_VL, MAX_VL, cap_vl1
-	li INITIAL_VL, 8
-cap_vl1:
+	minu INITIAL_VL, BLOCKS_REMAINING, MAX_VL
 	vsetvli INITIAL_VL, INITIAL_VL, e32, m1, tu, ma
 	# set up state as initial zero step
 	vmv.v.i VACCUM0, 0
@@ -514,10 +493,7 @@ vector_loop:
 	bge INPUT, INPUT_END, rotate_powers
 
 	# Manual vsetvl
-	mv VL, BLOCKS_REMAINING
-	ble VL, MAX_VL, cap_vl2
-	li VL, 8
-cap_vl2:
+	minu VL, BLOCKS_REMAINING, MAX_VL
 	vsetvli VL, VL, e32, m1, tu, ma
 	## multiply by r^vlmax
 	vec_mul130 vx VACCUM0 VACCUM1 VACCUM2 VACCUM3 VACCUM4 R0 R1 R2 R3 R4 R1x5 R2x5 R3x5 R4x5 vx
@@ -542,10 +518,9 @@ rotate_powers:
 	vslideup.vx VPOWER4, VLOAD4, VL
 tail_rotate_powers:
 	# then load the lower powers into the lower elements
-	slli t1, t0, 2
-	add t0, t0, t1
-	slli t0, t0, 2
-	add t2, t2, t0
+	# reduced t2+=t0*20
+	sh2add t0, t0, t0
+	sh2add t2, t0, t2
 	vsetvli zero, VL, e32, m1, tu, ma
 	vlseg5e32.v VPOWER0, (t2)
 
@@ -594,8 +569,7 @@ mul_powers_of_r:
 	carry_scalar ACCUM3
 	carry_scalar ACCUM4
 	# carry *= 5
-	slli t1, CARRY, 2
-	add CARRY, CARRY, t1
+	sh2add CARRY, CARRY, CARRY
 	carry_scalar ACCUM0
 	carry_scalar ACCUM1
 	carry_scalar ACCUM2
@@ -643,10 +617,9 @@ vector_poly1305_single_blocks:
 	li LIMB_MASK, 0x3ffffff
 	# find r^1 in saved powers of r tail
 	vsetivli MAX_VL, 8, e32, m1, ta, ma
-	slli t1, MAX_VL, 2
-	add t0, MAX_VL, t1
-	slli t0, t0, 2
-	add t0, CONTEXT, t0
+	# reduced t0*20
+	sh2add t0, MAX_VL, MAX_VL
+	sh2add t0, t0, CONTEXT
 	# our VL for the rest of the function:
 	# 5 32-bit limbs, with LMUL=2 iff VLEN=128
 	li VTYPE, 0xd0
@@ -661,14 +634,10 @@ vector_poly1305_single_blocks:
 	lw R2, 8(t0)
 	lw R3, 12(t0)
 	lw R4, 16(t0)
-	slli t1, R1, 2
-	slli t2, R2, 2
-	slli t3, R3, 2
-	slli t4, R4, 2
-	add R1x5, R1, t1
-	add R2x5, R2, t2
-	add R3x5, R3, t3
-	add R4x5, R4, t4
+	sh2add R1x5, R1, R1
+	sh2add R2x5, R2, R2
+	sh2add R3x5, R3, R3
+	sh2add R4x5, R4, R4
 	# precompute offset multipliers, preshifted
 	vslide1up.vx VWIDE1, VWIDE0, R4x5
 	vslide1up.vx VWIDE2, VWIDE1, R3x5
@@ -728,8 +697,7 @@ single_block_loop:
 	carry_scalar ACCUM3
 	carry_scalar ACCUM4
 	# carry *= 5
-	slli t0, CARRY, 2
-	add CARRY, CARRY, t0
+	sh2add CARRY, CARRY, CARRY
 	carry_scalar ACCUM0
 	carry_scalar ACCUM1
 	carry_scalar ACCUM2
