@@ -16,4 +16,4 @@
 
 clang -march=rv64gcvb main.c boring.c openssl.c vchacha.S vpoly.S -o main -O2 -static || exit 1
 
-./main -b
+./main -b $@

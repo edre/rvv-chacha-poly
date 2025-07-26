@@ -255,7 +255,8 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
   ioctl(fd, PERF_EVENT_IOC_RESET, 0);
   ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
 
-  for (int i = 0; i < num_runs; i++) {
+  int init_runs = 100000;
+  for (int i = 0; i < init_runs; i++) {
     vector_poly1305_init(&vector_state, key);
   }
 
@@ -270,10 +271,7 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
     exit(EXIT_FAILURE);
   }
 
-  uint64_t init_size = vlmax_u32()*4;
-  printf("poly init\t% 5ld bytes\t%.1f MB/s\t%.2f cycles/byte\n", init_size,
-  	(double)(init_size*num_runs)/micros,
-  	(double)(cycles)/(init_size*num_runs));
+  printf("poly init\t\t\t%lu ns\t\t%lu cycles\n", micros*1000/init_runs, cycles/init_runs);
 
 
   // Benchmark boring.
@@ -398,16 +396,23 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
 
 int main(int argc, char *const argv[]) {
   bool benchmark = false;
+  int n = 1024;
   int c;
-  while ((c = getopt(argc, argv, "b")) != -1) {
+  while ((c = getopt(argc, argv, "bn:")) != -1) {
     switch (c) {
       case 'b':
         benchmark = true;
-	break;
+        break;
+      case 'n':
+        n = atoi(optarg);
+        break;
     }
   }
   if (benchmark) {
-    run_benchmarks(1024, 100);
+    if (n < 1) n = 1;
+    int runs = (100<<20)/(n+100);
+    if (runs < 1) runs = 1;
+    run_benchmarks(n, runs);
   } else {
     FILE* rand = fopen("/dev/urandom", "r");
     bool pass = test_chachas(rand);
