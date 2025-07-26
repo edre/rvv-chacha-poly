@@ -71,11 +71,10 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
   if (verbose || !pass) {
     printf("golden: ");
     println_hex(golden, 32);
-    printf("\nvector: ");
+    printf("vector: ");
     println_hex(vector, 32);
-    printf("\nrotate: ");
+    printf("rotate: ");
     println_hex(vector_rotate, 32);
-    printf("\n");
   }
 
   uint32_t past_end = vector[len];
