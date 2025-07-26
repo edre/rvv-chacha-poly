@@ -342,9 +342,7 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
 
   // Benchmark vector single.
   // Warm up the instruction cache.
-  vector_poly1305_init(&vector_state, key);
-  vector_poly1305_single_blocks(&vector_state, key, 32, 1);
-  vector_poly1305_emit(&vector_state, key+16, sig);
+  vector_poly1305(key, 32, key, sig, vector_poly1305_single_blocks);
 
   getrusage(RUSAGE_SELF, &time_stuff);
   micros_start = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
@@ -352,9 +350,7 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
   ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
 
   for (int i = 0; i < num_runs; i++) {
-    vector_poly1305_init(&vector_state, key);
-    vector_poly1305_single_blocks(&vector_state, data, input_size, 1);
-    vector_poly1305_emit(&vector_state, key+16, sig);
+    vector_poly1305(data, input_size, key, sig, vector_poly1305_single_blocks);
   }
 
   ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
@@ -374,9 +370,7 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
 
   // Benchmark vector blocks.
   // Warm up the instruction cache.
-  vector_poly1305_init(&vector_state, key);
-  vector_poly1305_blocks(&vector_state, key, 32, 1);
-  vector_poly1305_emit(&vector_state, key+16, sig);
+  vector_poly1305(key, 32, key, sig, vector_poly1305_blocks);
 
   getrusage(RUSAGE_SELF, &time_stuff);
   micros_start = (uint64_t)(time_stuff.ru_utime.tv_usec) + 1000000*(uint64_t)(time_stuff.ru_utime.tv_sec);
@@ -384,9 +378,7 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
   ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
 
   for (int i = 0; i < num_runs; i++) {
-    vector_poly1305_init(&vector_state, key);
-    vector_poly1305_blocks(&vector_state, data, input_size, 1);
-    vector_poly1305_emit(&vector_state, key+16, sig);
+    vector_poly1305(data, input_size, key, sig, vector_poly1305_blocks);
   }
 
   ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
