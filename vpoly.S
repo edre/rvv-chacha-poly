@@ -350,12 +350,12 @@ vector_poly1305_init:
 	# scalar-scalar 130bit mul: R = R * R
 	scalar_mul130 R0 R1 R2 R3 R4 R3x5 R4x5 t0 t1 t2 t3 t4 s9
 
-	vmv.v.i VTMP, 0 # no vmv with mask, so vor with 0
-	vor.vx VPOWER0, VTMP, R0, VMASK.t
-	vor.vx VPOWER1, VTMP, R1, VMASK.t
-	vor.vx VPOWER2, VTMP, R2, VMASK.t
-	vor.vx VPOWER3, VTMP, R3, VMASK.t
-	vor.vx VPOWER4, VTMP, R4, VMASK.t
+	vmv.v.i VTMP, 0 # no vmv with mask, so vadd with 0
+	vadd.vx VPOWER0, VTMP, R0, VMASK.t
+	vadd.vx VPOWER1, VTMP, R1, VMASK.t
+	vadd.vx VPOWER2, VTMP, R2, VMASK.t
+	vadd.vx VPOWER3, VTMP, R3, VMASK.t
+	vadd.vx VPOWER4, VTMP, R4, VMASK.t
 
 precomp:
 	# compute mask
@@ -485,19 +485,19 @@ vector_loop:
 	vand.vx VTMP0, VLOAD0, LIMB_MASK
 	vsrl.vi VLOAD0, VLOAD0, 26
 	vsll.vi VTMP, VLOAD1, 6
-	vor.vv VLOAD0, VLOAD0, VTMP
+	vadd.vv VLOAD0, VLOAD0, VTMP
 	vand.vx VTMP1, VLOAD0, LIMB_MASK
 	vsrl.vi VLOAD1, VLOAD1, 20
 	vsll.vi VTMP, VLOAD2, 12
-	vor.vv VLOAD1, VLOAD1, VTMP
+	vadd.vv VLOAD1, VLOAD1, VTMP
 	vand.vx VTMP2, VLOAD1, LIMB_MASK
 	vsrl.vi VLOAD2, VLOAD2, 14
 	vsll.vi VTMP, VLOAD3, 18
-	vor.vv VLOAD2, VLOAD2, VTMP
+	vadd.vv VLOAD2, VLOAD2, VTMP
 	vand.vx VTMP3, VLOAD2, LIMB_MASK
 	vsrl.vi VTMP4, VLOAD3, 8
 	# add leading bit
-	vor.vx VTMP4, VTMP4, PADBIT
+	vadd.vx VTMP4, VTMP4, PADBIT
 
 	# add into state
 	vadd.vv VACCUM0, VACCUM0, VTMP0
