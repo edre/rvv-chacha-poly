@@ -275,8 +275,8 @@
 # not counting nonce or partial block buffer. This is exactly enough for:
 # state struct {
 #   uint32_t[5] previous accumulated state // offset 0
-#   uint32_t[5] r^vlmax // offset 20
-#   uint32_t[8][5] 8-element powers of r vector, in 5 limbs // offset 32
+#   uint32_t[8][5] 8-element powers of r vector, in 5 limbs // offset 20
+#   bool cached_powers // offset 180
 # }
 
 # void poly1305_init(void *ctx, const unsigned char key[16])
@@ -287,11 +287,6 @@ vector_poly1305_init:
 	sd s2, -24(sp)
 	sd s3, -32(sp)
 	sd s4, -40(sp)
-	sd s5, -48(sp)
-	sd s6, -56(sp)
-	sd s7, -64(sp)
-	sd s8, -72(sp)
-	sd s9, -80(sp)
 
 	li LIMB_MASK, 0x3ffffff
 
@@ -303,6 +298,63 @@ vector_poly1305_init:
 	li t2, 0x0ffffffc0ffffffc
 	and t1, t1, t2
 	scalar_extract_limbs t0 t1 R0 R1 R2 R3 R4
+
+	# store r^1 where it will live at the end of the powers of r
+	vsetivli MAX_VL, 8, e32, m1, ta, ma
+	# reduced t0*20
+	sh2add t0, MAX_VL, MAX_VL
+	sh2add t0, t0, CONTEXT
+
+	sw R0, 0(t0)
+	sw R1, 4(t0)
+	sw R2, 8(t0)
+	sw R3, 12(t0)
+	sw R4, 16(t0)
+
+	# zero initial accumulation
+	sd zero, 0(CONTEXT)
+	sd zero, 8(CONTEXT)
+	sw zero, 16(CONTEXT)
+	# zero cached_powers bit
+	sw zero, 180(CONTEXT)
+
+	# restore registers
+	ld s0, -8(sp)
+	ld s1, -16(sp)
+	ld s2, -24(sp)
+	ld s3, -32(sp)
+	ld s4, -40(sp)
+	ret
+
+# void poly1305_blocks(void *ctx, const unsigned char *inp, size_t len, u32 padbit)
+vector_poly1305_blocks:
+	# save registers
+	sd s0, -8(sp)
+	sd s1, -16(sp)
+	sd s2, -24(sp)
+	sd s3, -32(sp)
+	sd s4, -40(sp)
+	sd s5, -48(sp)
+	sd s6, -56(sp)
+	sd s7, -64(sp)
+	sd s8, -72(sp)
+	sd s9, -80(sp)
+	
+	beqz LENGTH, blocks_return
+
+	# check to see if powers are already cached
+	lw t0, 180(CONTEXT)
+	bnez t0, do_the_multi_blocks
+	
+	vsetivli MAX_VL, 8, e32, m1, ta, ma
+	# reduced t0*20
+	sh2add t0, MAX_VL, MAX_VL
+	sh2add t0, t0, CONTEXT
+	lw R0, 0(t0)
+	lw R1, 4(t0)
+	lw R2, 8(t0)
+	lw R3, 12(t0)
+	lw R4, 16(t0)
 
 	# pre-multiplied-by-5 scalars
 	sh2add R1x5, R1, R1
@@ -373,44 +425,15 @@ precomp:
 	blt VL, MAX_VL, precomp
 
 	# store state
-	# zero initial accumulation
-	sd zero, 0(CONTEXT)
-	sd zero, 8(CONTEXT)
-	sw zero, 16(CONTEXT)
 	# power of r vector limbs
 	add t0, CONTEXT, 20
 	vsetvli zero, VL, e32, m1, ta, ma
 	vsseg5e32.v VPOWER0, (t0)
+	# mark cached
+	li t0, 1
+	sw t0, 180(CONTEXT)
 
-	# restore registers
-	ld R0, -8(sp)
-	ld s1, -16(sp)
-	ld s2, -24(sp)
-	ld s3, -32(sp)
-	ld s4, -40(sp)
-	ld s5, -48(sp)
-	ld s6, -56(sp)
-	ld s7, -64(sp)
-	ld s8, -72(sp)
-	ld s9, -80(sp)
-	ret
-
-# void poly1305_blocks(void *ctx, const unsigned char *inp, size_t len, u32 padbit)
-vector_poly1305_blocks:
-	# save registers
-	sd s0, -8(sp)
-	sd s1, -16(sp)
-	sd s2, -24(sp)
-	sd s3, -32(sp)
-	sd s4, -40(sp)
-	sd s5, -48(sp)
-	sd s6, -56(sp)
-	sd s7, -64(sp)
-	sd s8, -72(sp)
-	sd s9, -80(sp)
-	
-	beqz LENGTH, blocks_return
-
+do_the_multi_blocks:
 	li LIMB_MASK, 0x3ffffff
 	# load state
 	lw R0, 20(CONTEXT)

@@ -347,9 +347,7 @@ void run_benchmarks(size_t input_size, size_t num_runs) {
   ioctl(fd, PERF_EVENT_IOC_ENABLE, 0);
 
   for (int i = 0; i < num_runs; i++) {
-    // skip complicated init
-    vector_poly1305_single_blocks(vector_state, data, input_size, 1);
-    vector_poly1305_emit(vector_state, key+16, sig);
+    vector_poly1305(data, input_size, key, sig, vector_poly1305_single_blocks);
   }
 
   ioctl(fd, PERF_EVENT_IOC_DISABLE, 0);
