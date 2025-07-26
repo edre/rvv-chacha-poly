@@ -122,6 +122,8 @@
 #define BLOCKS_REMAINING a4
 #define VL a6
 #define INITIAL_VL a2
+#define VTYPE s10
+#define VTYPE_INC a4
 
 # Generic 130-bit multiply/mod code
 # Reads 5-limbed inputs from a and b, writes result to a
@@ -630,20 +632,25 @@ vector_poly1305_single_blocks:
 	sd s7, -64(sp)
 	sd s8, -72(sp)
 	sd s9, -80(sp)
+	sd s10, -88(sp)
 	# leave 40 bytes of stack space
-	add sp, sp, -128
+	add sp, sp, -136
 
 	li LIMB_MASK, 0x3ffffff
 	# find r^1 in saved powers of r tail
-	vsetivli t0, 8, e32, m1, ta, ma
-	slli t1, t0, 2
-	add t0, t0, t1
+	vsetivli MAX_VL, 8, e32, m1, ta, ma
+	slli t1, MAX_VL, 2
+	add t0, MAX_VL, t1
 	slli t0, t0, 2
 	add t0, CONTEXT, t0
 	# our VL for the rest of the function:
-	# 5 32-bit limbs, with LMUL=2 so that even the
-	# smallest 128-bit vector unit can use the same code 
-	vsetivli zero, 5, e32, m2, ta, ma
+	# 5 32-bit limbs, with LMUL=2 iff VLEN=128
+	li VTYPE, 0xd0
+	slti t1, MAX_VL, 8
+	add VTYPE, VTYPE, t1
+	li VL, 5
+	li VTYPE_INC, 0x9
+	vsetvl zero, VL, VTYPE
 	vle32.v VWIDE0, (t0)
 	# precompute r*5
 	lw R1, 4(t0)
@@ -699,9 +706,11 @@ single_block_loop:
 	vwmaccu.vx VTMP, ACCUM4, VWIDE4
 
 	# extract to 64-bit scalars, via the stack
-	vsetivli zero, 5, e64, m4, ta, ma
+	add VTYPE, VTYPE, VTYPE_INC
+	vsetvl zero, VL, VTYPE
 	vse64.v VTMP, (sp)
-	vsetivli zero, 5, e32, m2, ta, ma
+	sub VTYPE, VTYPE, VTYPE_INC
+	vsetvl zero, VL, VTYPE
 	ld ACCUM0, 0(sp)
 	ld ACCUM1, 8(sp)
 	ld ACCUM2, 16(sp)
@@ -735,7 +744,7 @@ end_single_block_loop:
 
 return:
 	# restore registers
-	add sp, sp, 128
+	add sp, sp, 136
 	ld s0, -8(sp)
 	ld s1, -16(sp)
 	ld s2, -24(sp)
@@ -746,6 +755,7 @@ return:
 	ld s7, -64(sp)
 	ld s8, -72(sp)
 	ld s9, -80(sp)
+	ld s10, -88(sp)
 	ret
 
 # void poly1305_emit(void *ctx, unsigned char mac[16],
