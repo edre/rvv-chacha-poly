@@ -494,26 +494,32 @@ vector_loop:
 rotate_powers:
 	add t2, CONTEXT, 20
 	sub t0, MAX_VL, VL
-	# If the final block is full or we never had a full block, skip loading the top elements.
+	# If the final block is full or we never had a full block, skip the rotation.
 	beq VL, MAX_VL, tail_rotate_powers
 	blt INITIAL_VL, MAX_VL, tail_rotate_powers
 
 	# load higher power of r vector limbs
-	vsetvli zero, t0, e32, m1, ta, ma
-	vlseg5e32.v VLOAD0, (t2)
-	# slide them up into the higher vector elements
 	vsetivli zero, 8, e32, m1, ta, ma
+	vlseg5e32.v VLOAD0, (t2)
+	# rotate them to end at the last VL
+	vslidedown.vx VPOWER0, VLOAD0, t0
+	vslidedown.vx VPOWER1, VLOAD1, t0
+	vslidedown.vx VPOWER2, VLOAD2, t0
+	vslidedown.vx VPOWER3, VLOAD3, t0
+	vslidedown.vx VPOWER4, VLOAD4, t0
 	vslideup.vx VPOWER0, VLOAD0, VL
 	vslideup.vx VPOWER1, VLOAD1, VL
 	vslideup.vx VPOWER2, VLOAD2, VL
 	vslideup.vx VPOWER3, VLOAD3, VL
 	vslideup.vx VPOWER4, VLOAD4, VL
+	j mul_powers_of_r
+
 tail_rotate_powers:
-	# then load the lower powers into the lower elements
+	# load the lower powers into the lower elements
 	# reduced t2+=t0*20
 	sh2add t0, t0, t0
 	sh2add t2, t0, t2
-	vsetvli zero, VL, e32, m1, tu, ma
+	vsetvli zero, VL, e32, m1, ta, ma
 	vlseg5e32.v VPOWER0, (t2)
 
 mul_powers_of_r:
