@@ -114,7 +114,6 @@
 #define MAX_VL a5
 #define BLOCKS_REMAINING a4
 #define VL a6
-#define INITIAL_VL a2
 #define VTYPE s10
 #define VTYPE_INC a4
 
@@ -351,7 +350,7 @@ vector_poly1305_multi_blocks:
 	
 	# check to see if powers are already cached
 	lw t0, 180(CONTEXT)
-	bnez t0, do_the_multi_blocks
+	bnez t0, load_powers_from_cache
 	
 	vsetivli MAX_VL, 8, e32, m1, ta, ma
 	# reduced t0*20
@@ -439,15 +438,20 @@ precomp:
 	# mark cached
 	li t0, 1
 	sw t0, 180(CONTEXT)
+	j process_multi_blocks
 
-do_the_multi_blocks:
-	li LIMB_MASK, 0x3ffffff
-	# load state
+load_powers_from_cache:
+	add t0, CONTEXT, 20
+	vsetivli zero, 8, e32, m1, ta, ma
+	vlseg5e32.v VPOWER0, (t0)
 	lw R0, 20(CONTEXT)
 	lw R1, 24(CONTEXT)
 	lw R2, 28(CONTEXT)
 	lw R3, 32(CONTEXT)
 	lw R4, 36(CONTEXT)
+
+process_multi_blocks:
+	li LIMB_MASK, 0x3ffffff
 	# pre-multiplied by 5 scalars
 	sh2add R1x5, R1, R1
 	sh2add R2x5, R2, R2
@@ -465,8 +469,8 @@ do_the_multi_blocks:
 
 	# We need to do vsetvl manually as we're potentially 
 	# using a smaller max than the vector unit can handle.
-	minu INITIAL_VL, BLOCKS_REMAINING, MAX_VL
-	vsetvli INITIAL_VL, INITIAL_VL, e32, m1, tu, ma
+	minu VL, BLOCKS_REMAINING, MAX_VL
+	vsetvli VL, VL, e32, m1, tu, ma
 	# set up state as initial zero step
 	vmv.v.i VACCUM0, 0
 	vmv.v.i VACCUM1, 0
@@ -476,7 +480,7 @@ do_the_multi_blocks:
 	# add scalar accumulation to first vector element
 	vsetivli zero, 1, e32, m1, tu, ma
 	vlseg5e32.v VACCUM0, (CONTEXT)
-	vsetvli VL, INITIAL_VL, e32, m1, tu, ma
+	vsetvli VL, VL, e32, m1, tu, ma
 
 vector_loop:
 	# load in new data:
@@ -522,38 +526,29 @@ vector_loop:
 	j vector_loop
 
 rotate_powers:
-	add t2, CONTEXT, 20
-	sub t0, MAX_VL, VL
-	# If the final block is full or we never had a full block, skip the rotation.
-	beq VL, MAX_VL, tail_rotate_powers
-	blt INITIAL_VL, MAX_VL, tail_rotate_powers
+	# If the final block is full, skip the rotation.
+	beq VL, MAX_VL, mul_powers_of_r
 
-	# load higher power of r vector limbs
-	vsetivli zero, 8, e32, m1, ta, ma
-	vlseg5e32.v VLOAD0, (t2)
 	# rotate them to end at the last VL
-	vslidedown.vx VPOWER0, VLOAD0, t0
-	vslidedown.vx VPOWER1, VLOAD1, t0
-	vslidedown.vx VPOWER2, VLOAD2, t0
-	vslidedown.vx VPOWER3, VLOAD3, t0
-	vslidedown.vx VPOWER4, VLOAD4, t0
-	vslideup.vx VPOWER0, VLOAD0, VL
-	vslideup.vx VPOWER1, VLOAD1, VL
-	vslideup.vx VPOWER2, VLOAD2, VL
-	vslideup.vx VPOWER3, VLOAD3, VL
-	vslideup.vx VPOWER4, VLOAD4, VL
-	j mul_powers_of_r
-
-tail_rotate_powers:
-	# load the lower powers into the lower elements
-	# reduced t2+=t0*20
-	sh2add t0, t0, t0
-	sh2add t2, t0, t2
-	vsetvli zero, VL, e32, m1, ta, ma
-	vlseg5e32.v VPOWER0, (t2)
+	vsetivli zero, 8, e32, m1, ta, ma
+	sub t0, MAX_VL, VL
+	vmv.v.v VTMP0, VPOWER0
+	vmv.v.v VTMP1, VPOWER1
+	vmv.v.v VTMP2, VPOWER2
+	vmv.v.v VTMP3, VPOWER3
+	vmv.v.v VTMP4, VPOWER4
+	vslidedown.vx VPOWER0, VTMP0, t0
+	vslidedown.vx VPOWER1, VTMP1, t0
+	vslidedown.vx VPOWER2, VTMP2, t0
+	vslidedown.vx VPOWER3, VTMP3, t0
+	vslidedown.vx VPOWER4, VTMP4, t0
+	vslideup.vx VPOWER0, VTMP0, VL
+	vslideup.vx VPOWER1, VTMP1, VL
+	vslideup.vx VPOWER2, VTMP2, VL
+	vslideup.vx VPOWER3, VTMP3, VL
+	vslideup.vx VPOWER4, VTMP4, VL
 
 mul_powers_of_r:
-	vsetvli zero, INITIAL_VL, e32, m1, ta, ma
 	# multiply in powers of r vector
 	vsll.vi VPOWER1x5, VPOWER1, 2
 	vsll.vi VPOWER2x5, VPOWER2, 2
