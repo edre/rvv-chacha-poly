@@ -52,6 +52,7 @@ bool test_chacha(const uint8_t* data, size_t len, const uint8_t key[32], const u
 			           size_t in_len, const uint8_t key[32],
 			           const uint8_t nonce[12], uint32_t counter);
 #endif
+  len &= ~63;
   uint8_t* golden = malloc(len);
   memset(golden, 0, len);
   boring_chacha20(golden, data, len, key, nonce, 0);

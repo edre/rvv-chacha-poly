@@ -233,50 +233,6 @@ round_loop_\name:
 	# loop again if we have remaining blocks
 	bnez t3, encrypt_blocks_\name
 
-	# we're done if there are no more remaining bytes from a partial block
-	beqz a2, return_\name
-
-	# to get the remaining partial block, we transfer the nth element of
-	# all the state vectors into contiguous stack memory with vsseg, then
-	# read them with byte-granularity vl
-
-	# reconstruct vl for all computed blocks
-	add t0, t3, t2
-	vsetvli t0, t0, e32, m1, ta, ma
-	add t0, t0, -1
-
-	# use a masked vsseg instead of sliding everything down?
-	# both options seem like they might touch a lot of vector state...
-	vslidedown.vx v16, v0, t0
-	vslidedown.vx v17, v1, t0
-	vslidedown.vx v18, v2, t0
-	vslidedown.vx v19, v3, t0
-	vslidedown.vx v20, v4, t0
-	vslidedown.vx v21, v5, t0
-	vslidedown.vx v22, v6, t0
-	vslidedown.vx v23, v7, t0
-	vslidedown.vx v24, v8, t0
-	vslidedown.vx v25, v9, t0
-	vslidedown.vx v26, v10, t0
-	vslidedown.vx v27, v11, t0
-	vslidedown.vx v28, v12, t0
-	vslidedown.vx v29, v13, t0
-	vslidedown.vx v30, v14, t0
-	vslidedown.vx v31, v15, t0
-	li t0, 1
-	vsetvli zero, t0, e32, m1, ta, ma
-	addi t0, sp, -64
-	addi t1, sp, -32
-	vsseg8e32.v v16, (t0)
-	vsseg8e32.v v24, (t1)
-
-	vsetvli a2, a2, e8, m8, ta, ma
-	vle8.v v0, (a1)
-	vle8.v v8, (t0)
-	vxor.vv v0, v0, v8
-	vse8.v v0, (a0)
-
-return_\name:
 	# restore registers
 	addi sp, sp, 96
 	ld s0, -8(sp)
